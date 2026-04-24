@@ -11,7 +11,6 @@ import {
 } from '@expo-google-fonts/poppins';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, Linking, View } from 'react-native';
@@ -31,40 +30,25 @@ export default function RootLayout() {
 
   useEffect(() => {
     const handleMagicLink = async (url: string) => {
-      console.log('🔗 URL received:', url);
-
       if (isSignInWithEmailLink(auth, url)) {
-        console.log('✅ Valid magic link!');
         try {
           const email = await AsyncStorage.getItem('adminEmailForLink');
-          console.log('📧 Saved email:', email);
-
           if (email) {
             await signInWithEmailLink(auth, email, url);
             await AsyncStorage.removeItem('adminEmailForLink');
-            console.log('✅ Sign in success! Going to Dashboard...');
-            router.replace('/Admin/AdminDashBoard');
+            router.replace('/Admin');
           }
         } catch (e) {
-          console.error('❌ Magic link error:', e);
+          console.error('Magic link error:', e);
         }
       }
     };
 
-    // App band thi aur link se khuli
     Linking.getInitialURL().then((url) => {
-      if (url) {
-        console.log('🚀 Initial URL:', url);
-        handleMagicLink(url);
-      }
+      if (url) handleMagicLink(url);
     });
 
-    // App already open thi background mein
-    const sub = Linking.addEventListener('url', ({ url }) => {
-      console.log('📲 Deep link received:', url);
-      handleMagicLink(url);
-    });
-
+    const sub = Linking.addEventListener('url', ({ url }) => handleMagicLink(url));
     return () => sub.remove();
   }, []);
 
@@ -80,16 +64,17 @@ export default function RootLayout() {
     <>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
+        <Stack.Screen name="Admin" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen name="screens/SplashScreen" />
         <Stack.Screen name="screens/LoginScreen" />
         <Stack.Screen name="screens/RegisterScreen" />
         <Stack.Screen name="screens/ForgotPasswordScreen" />
         <Stack.Screen name="screens/LoginOTPScreen" />
         <Stack.Screen name="screens/ResetOTPVerifyScreen" />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="(tabs)" />
+        {/* <Stack.Screen name="screens/ResetPasswordScreen" />  ← YEH ADD KARO */}
       </Stack>
-      <StatusBar style="auto" />
     </>
   );
 }

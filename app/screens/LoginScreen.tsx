@@ -16,7 +16,7 @@ import { auth, db } from '../../firebaseConfig';
 const EMAILJS_SERVICE_ID = 'service_wynnt38';
 const EMAILJS_TEMPLATE_ID = 'template_kx85hs2';
 const EMAILJS_PUBLIC_KEY = 'hMZkNajE1DpuQeOMQ';
-const EMAILJS_PRIVATE_KEY = 'YOUR_PRIVATE_KEY_HERE'; // EmailJS Dashboard > Account > API Keys
+const EMAILJS_PRIVATE_KEY = 'n5Zknt7IKTmMQdj_C9dDA'; // EmailJS Dashboard > Account > API Keys
 
 export default function LoginScreen() {
   const [activeTab, setActiveTab] = useState<'Consumer' | 'Admin'>('Consumer');
@@ -46,7 +46,7 @@ export default function LoginScreen() {
           sessionVerified: false,
         });
 
-        router.replace('/Admin/AdminDashBoard');
+        router.replace('/Admin');
       }
     });
 
