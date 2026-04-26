@@ -1,63 +1,155 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, StatusBar, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 
 export default function ResetOTPVerifyScreen() {
-  const { email, mobile } = useLocalSearchParams();
+  const { email, otp: storedOtp, expiresAt } = useLocalSearchParams<{
+    email: string; otp: string; expiresAt: string;
+  }>();
+
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
+  const [countdown, setCountdown] = useState(60);
+  const [canResend, setCanResend] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+
+  // Countdown timer
+  useEffect(() => {
+    if (countdown <= 0) { setCanResend(true); return; }
+    const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
 
   const handleVerify = async () => {
-    if (!otp || otp.length < 4) { Alert.alert('Error', 'Please enter a valid OTP.'); return; }
+    if (!otp || otp.length < 6) {
+      Alert.alert('Error', 'Please enter the 6-digit code.'); return;
+    }
     setLoading(true);
     try {
-      Alert.alert('Verified!', 'Identity verified. You can now reset your password.', [
-        { text: 'OK', onPress: () => router.push({ pathname: '/screens/ResetPasswordScreen', params: { email } }) }
-      ]);
+      // Expiry check
+      if (Date.now() > Number(expiresAt)) {
+        Alert.alert('Expired', 'OTP has expired. Please request a new one.');
+        setLoading(false); return;
+      }
+      // Match check
+      if (otp.trim() !== storedOtp?.trim()) {
+        Alert.alert('Invalid Code', 'The code you entered is incorrect.');
+        setLoading(false); return;
+      }
+      // Success → go to Reset Password screen
+      router.replace({
+        pathname: '/screens/ResetPasswordScreen',
+        params: { email },
+      });
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'OTP verification failed.');
+      Alert.alert('Error', error.message || 'Verification failed.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleResend = () => {
+    router.back(); // Go back to ForgotPasswordScreen to resend
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={22} color="#0B3C5D" />
+        <Ionicons name="arrow-back" size={22} color="#2EC4B6" />
       </TouchableOpacity>
+
+      <Text style={styles.headerTitle}>Verify Code</Text>
+
       <View style={styles.iconContainer}>
-        <Ionicons name="phone-portrait-outline" size={36} color="#0B3C5D" />
+        <Ionicons name="shield-checkmark-outline" size={32} color="#FFFFFF" />
       </View>
-      <Text style={styles.title}>Verify OTP</Text>
-      <Text style={styles.subtitle}>Enter the OTP sent to {mobile} to verify your identity.</Text>
 
-      <TextInput style={styles.input} placeholder="Enter OTP" placeholderTextColor="#9CA3AF" value={otp} onChangeText={setOtp} keyboardType="numeric" maxLength={6} textAlign="center" />
+      <Text style={styles.title}>Enter Verification Code</Text>
+      <Text style={styles.subtitle}>
+        We sent a 6-digit code to{'\n'}
+        <Text style={styles.emailHighlight}>{email}</Text>
+      </Text>
 
-      <TouchableOpacity style={styles.button} onPress={handleVerify} disabled={loading}>
-        {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Verify OTP</Text>}
+      {/* OTP Input */}
+      <TextInput
+        ref={inputRef}
+        style={styles.otpInput}
+        placeholder="● ● ● ● ● ●"
+        placeholderTextColor="#B0BEC5"
+        value={otp}
+        onChangeText={setOtp}
+        keyboardType="numeric"
+        maxLength={6}
+        textAlign="center"
+        autoFocus
+      />
+
+      {/* Expiry notice */}
+      <View style={styles.noticeBox}>
+        <Ionicons name="time-outline" size={16} color="#2EC4B6" />
+        <Text style={styles.noticeText}>Code expires in 10 minutes</Text>
+      </View>
+
+      {/* Verify Button */}
+      <TouchableOpacity style={styles.verifyButton} onPress={handleVerify} disabled={loading}>
+        {loading
+          ? <ActivityIndicator color="#FFFFFF" />
+          : <Text style={styles.verifyButtonText}>Verify Code</Text>}
       </TouchableOpacity>
+
+      {/* Resend */}
+      <View style={styles.resendRow}>
+        <Text style={styles.resendLabel}>Didn't receive the code? </Text>
+        {canResend
+          ? <TouchableOpacity onPress={handleResend}>
+              <Text style={styles.resendLink}>Resend</Text>
+            </TouchableOpacity>
+          : <Text style={styles.resendCountdown}>Resend in {countdown}s</Text>
+        }
+      </View>
 
       <TouchableOpacity onPress={() => router.push('/screens/LoginScreen')}>
-        <Text style={styles.backText}>Back to Login</Text>
+        <Text style={styles.backToLogin}>Back to Login</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 28, paddingTop: 70, alignItems: 'center' },
+  container: { flex: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 24, paddingTop: 60, alignItems: 'center' },
   backBtn: { position: 'absolute', top: 50, left: 20, padding: 8 },
-  iconContainer: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  title: { fontFamily: 'Poppins_700Bold', fontSize: 20, color: '#1F2933', marginBottom: 8 },
+  headerTitle: { fontFamily: 'Poppins_600SemiBold', fontSize: 16, color: '#1F2933', marginBottom: 32 },
+  iconContainer: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#2EC4B6', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
+  title: { fontFamily: 'Poppins_700Bold', fontSize: 22, color: '#1F2933', marginBottom: 10, textAlign: 'center' },
   subtitle: { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20, marginBottom: 28 },
-  input: { width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.1)', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 14, fontFamily: 'Inter_400Regular', fontSize: 20, color: '#1F2933', marginBottom: 20, letterSpacing: 6 },
-  button: { width: '100%', backgroundColor: '#0B3C5D', borderRadius: 8, paddingVertical: 15, alignItems: 'center', marginBottom: 16 },
-  buttonText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#FFFFFF' },
-  backText: { fontFamily: 'Inter_500Medium', fontSize: 14, color: '#0B3C5D' },
+  emailHighlight: { fontFamily: 'Inter_600SemiBold', color: '#2EC4B6' },
+  otpInput: {
+    width: '100%',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: '#2EC4B6',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 28,
+    color: '#1F2933',
+    marginBottom: 16,
+    letterSpacing: 12,
+  },
+  noticeBox: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 28 },
+  noticeText: { fontFamily: 'Inter_400Regular', fontSize: 12, color: '#6B7280' },
+  verifyButton: { width: '100%', backgroundColor: '#2EC4B6', borderRadius: 8, paddingVertical: 15, alignItems: 'center', marginBottom: 16 },
+  verifyButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#FFFFFF' },
+  resendRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  resendLabel: { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280' },
+  resendLink: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#2EC4B6' },
+  resendCountdown: { fontFamily: 'Inter_500Medium', fontSize: 13, color: '#9CA3AF' },
+  backToLogin: { fontFamily: 'Inter_500Medium', fontSize: 14, color: '#2EC4B6' },
 });

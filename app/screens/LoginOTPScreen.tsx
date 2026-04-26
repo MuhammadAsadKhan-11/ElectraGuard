@@ -1,250 +1,344 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { collection, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, StatusBar, StyleSheet,
-  Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { auth, db } from '../../firebaseConfig';
 
-/**
- * EMAIL OTP FLOW (Custom 6-digit code via email):
- * 1. On mount, generate a 6-digit OTP, store it in Firestore under otpCodes/{uid}
- * 2. Send it via a Cloud Function (or EmailJS) to user's email
- * 3. User enters OTP → verify against Firestore → mark emailVerified = true → navigate
- *
- * NOTE: Firebase does not natively send custom OTPs. 
- * This screen uses a Cloud Function endpoint `SEND_OTP_ENDPOINT` to send the email.
- * Replace SEND_OTP_ENDPOINT with your actual deployed Cloud Function URL.
- */
-
-const SEND_OTP_ENDPOINT = 'https://YOUR_REGION-YOUR_PROJECT.cloudfunctions.net/sendOtpEmail';
+// ── EmailJS Config ─────────────────────────────────────────────────────────────
+const EMAILJS_SERVICE_ID           = 'service_wynnt38';
+const EMAILJS_PUBLIC_KEY           = 'hMZkNajE1DpuQeOMQ';
+const EMAILJS_PRIVATE_KEY          = 'n5Zknt7IKTmMQdj_C9dDA';
+const EMAILJS_CONSUMER_TEMPLATE_ID = 'template_p7vjo2g'; // ← Consumer ka OTP template ho to yahan change karo
+const EMAILJS_ADMIN_TEMPLATE_ID    = 'template_kx85hs2'; // ← Admin ka alag OTP template ho to yahan change karo
 
 export default function LoginOTPScreen() {
-  const params = useLocalSearchParams();
-  const email = params.email as string;
-  const role = params.role as string; // 'Admin' | 'Consumer'
+  const params = useLocalSearchParams<{
+    email:         string;
+    password:      string;
+    role:          string;
+    consumerDocId?: string;
+    adminDocId?:    string;
+  }>();
 
-  const [otp, setOtp] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
-  const [countdown, setCountdown] = useState(0);
-  const timerRef = useRef<any>(null);
+  const { email, password, role, consumerDocId = '', adminDocId = '' } = params;
 
+  const [showPassword, setShowPassword]   = useState(false);
+  const [otp, setOtp]                     = useState('');
+  const [loading, setLoading]             = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [countdown, setCountdown]         = useState(0);
+  const timerRef                          = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const isAdmin      = role === 'Admin';
+  const firestoreCol = isAdmin ? 'admins' : 'consumers';
+  const docId        = isAdmin ? adminDocId : consumerDocId;
+  const templateId   = isAdmin ? EMAILJS_ADMIN_TEMPLATE_ID : EMAILJS_CONSUMER_TEMPLATE_ID;
+
+  // ─── Start countdown on mount ─────────────────────────────────────────────────
   useEffect(() => {
-    sendOTP();
-    return () => clearInterval(timerRef.current);
+    startCountdown();
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
 
   const startCountdown = () => {
     setCountdown(60);
+    if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setCountdown((prev) => {
-        if (prev <= 1) { clearInterval(timerRef.current); return 0; }
+        if (prev <= 1) { clearInterval(timerRef.current!); return 0; }
         return prev - 1;
       });
     }, 1000);
   };
 
-  const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
+  // ─── Resend OTP ───────────────────────────────────────────────────────────────
+  const handleResendOTP = async () => {
+    if (countdown > 0) return;
+    setResendLoading(true);
 
-  const sendOTP = async () => {
-    setSending(true);
     try {
-      const generatedOtp = generateOTP();
-      const user = auth.currentUser;
-      if (!user) { Alert.alert('Error', 'Session expired. Please login again.'); router.back(); return; }
+      const newOtp       = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpiresAt = Date.now() + 10 * 60 * 1000;
 
-      // Store OTP in Firestore with expiry (10 minutes)
-      const expiresAt = Date.now() + 10 * 60 * 1000;
-      const collectionName = role === 'Admin' ? 'admins' : 'consumers';
-      const userQuery = query(collection(db, collectionName), where('uid', '==', user.uid));
-      const snapshot = await getDocs(userQuery);
-
-      if (!snapshot.empty) {
-        await updateDoc(snapshot.docs[0].ref, { otpCode: generatedOtp, otpExpiresAt: expiresAt });
-      }
-
-      // Send OTP via Cloud Function
-      await fetch(SEND_OTP_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp: generatedOtp, role }),
+      await updateDoc(doc(db, firestoreCol, docId), {
+        loginOtp:          newOtp,
+        loginOtpExpiresAt: otpExpiresAt,
+        isVerified:        false,
       });
 
-      setOtpSent(true);
+      const payload = {
+        service_id:      EMAILJS_SERVICE_ID,
+        template_id:     templateId,
+        user_id:         EMAILJS_PUBLIC_KEY,
+        accessToken:     EMAILJS_PRIVATE_KEY,
+        template_params: { to_email: email, otp_code: newOtp },
+      };
+
+      const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', origin: 'http://localhost' },
+        body:    JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const txt = await response.text();
+        throw new Error(`EmailJS error: ${txt}`);
+      }
+
+      Alert.alert('OTP Sent', `A new OTP has been sent to ${email}.`);
       startCountdown();
-      Alert.alert('OTP Sent', `A 6-digit verification code has been sent to ${email}`);
-    } catch (error: any) {
-      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to resend OTP.');
     } finally {
-      setSending(false);
+      setResendLoading(false);
     }
   };
 
-  const handleVerifyOTP = async () => {
-    if (!otp || otp.length < 6) {
+  // ─── Verify & Login ───────────────────────────────────────────────────────────
+  const handleVerify = async () => {
+    if (!otp || otp.length !== 6) {
       Alert.alert('Error', 'Please enter the 6-digit OTP.');
       return;
     }
     setLoading(true);
+
     try {
-      const user = auth.currentUser;
-      if (!user) { Alert.alert('Error', 'Session expired.'); router.back(); return; }
+      const docRef  = doc(db, firestoreCol, docId);
+      const docSnap = await getDoc(docRef);
 
-      const collectionName = role === 'Admin' ? 'admins' : 'consumers';
-      const userQuery = query(collection(db, collectionName), where('uid', '==', user.uid));
-      const snapshot = await getDocs(userQuery);
+      if (!docSnap.exists()) {
+        Alert.alert('Error', `${isAdmin ? 'Admin' : 'Consumer'} record not found.`);
+        setLoading(false);
+        return;
+      }
 
-      if (snapshot.empty) { Alert.alert('Error', 'User record not found.'); setLoading(false); return; }
+      const data      = docSnap.data();
+      const storedOtp = data?.loginOtp as string;
+      const expiresAt = data?.loginOtpExpiresAt as number;
 
-      const userData = snapshot.docs[0].data();
-      const storedOtp = userData.otpCode;
-      const otpExpiresAt = userData.otpExpiresAt;
-
-      if (!storedOtp || Date.now() > otpExpiresAt) {
+      // Expiry check
+      if (Date.now() > expiresAt) {
         Alert.alert('OTP Expired', 'Your OTP has expired. Please request a new one.');
         setLoading(false);
         return;
       }
 
-      if (otp !== storedOtp) {
+      // Match check
+      if (otp.trim() !== storedOtp) {
         Alert.alert('Invalid OTP', 'The OTP you entered is incorrect.');
         setLoading(false);
         return;
       }
 
-      // OTP verified — update Firestore
-      await updateDoc(snapshot.docs[0].ref, {
-        emailVerified: true,
-        otpCode: null,
-        otpExpiresAt: null,
-        lastLoginAt: new Date().toISOString(),
+      // OTP sahi — sign in karo
+      await signInWithEmailAndPassword(auth, email, password);
+
+      await updateDoc(docRef, {
+        isVerified:        true,
+        loginOtp:          null,
+        loginOtpExpiresAt: null,
       });
 
-      // Navigate based on role
-      if (role === 'Admin') {
-        router.replace('/(Admin)');
-      } else {
-        router.replace('/(tabs)');
-      }
-    } catch (error: any) {
-      Alert.alert('Verification Failed', error.message || 'Something went wrong.');
+      // Role ke hisaab se navigate
+     router.replace((isAdmin ? '/Admin' : '/Consumer') as any);
+
+
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Verification failed.');
     } finally {
       setLoading(false);
     }
   };
 
+  // ─── UI ───────────────────────────────────────────────────────────────────────
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={22} color="#0B3C5D" />
-      </TouchableOpacity>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      <View style={styles.iconContainer}>
-        <Ionicons name="mail-outline" size={40} color="#0B3C5D" />
-      </View>
-
-      <Text style={styles.title}>
-        {role === 'Admin' ? 'Admin Authentication' : 'Email Verification'}
-      </Text>
-      <Text style={styles.subtitle}>
-        Enter the 6-digit OTP sent to{'\n'}
-        <Text style={styles.emailHighlight}>{email}</Text>
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="• • • • • •"
-        placeholderTextColor="#9CA3AF"
-        value={otp}
-        onChangeText={setOtp}
-        keyboardType="numeric"
-        maxLength={6}
-      />
-
-      <View style={styles.noticeBox}>
-        <Ionicons
-          name={role === 'Admin' ? 'shield-checkmark-outline' : 'mail-open-outline'}
-          size={16}
-          color="#0B3C5D"
-        />
-        <Text style={styles.noticeText}>
-          {role === 'Admin'
-            ? 'Admin accounts require email OTP for every login session.'
-            : 'Check your email inbox (and spam) for the verification code.'}
+        {/* Header label */}
+        <Text style={styles.headerLabel}>
+          {isAdmin ? 'Admin Authentication' : 'Login Authentication'}
         </Text>
-      </View>
 
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handleVerifyOTP}
-        disabled={loading || !otpSent}
-      >
-        {loading
-          ? <ActivityIndicator color="#FFFFFF" />
-          : <Text style={styles.buttonText}>Verify & Login</Text>
-        }
-      </TouchableOpacity>
+        {/*
+          ⚡ LIGHTNING IMAGE:
+          Jab tum lightning.png assets mein dalo to
+          require('../../assets/logo.png')
+          ko
+          require('../../assets/lightning.png')
+          se replace karo
+        */}
+        <View style={styles.logoContainer}>
+          <Image
+            source={require('../../assets/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
 
-      {/* Resend OTP */}
-      <TouchableOpacity
-        style={[styles.resendBtn, (sending || countdown > 0) && styles.resendBtnDisabled]}
-        onPress={sendOTP}
-        disabled={sending || countdown > 0}
-      >
-        {sending
-          ? <ActivityIndicator color="#0B3C5D" size="small" />
-          : <Text style={styles.resendText}>
-              {countdown > 0 ? `Resend OTP in ${countdown}s` : 'Resend OTP'}
+        <Text style={styles.brandName}>Electra Guard</Text>
+        <Text style={styles.subtitle}>Utility Theft Detection & Analytics System</Text>
+
+        {/* Email — read only */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>{isAdmin ? 'Admin Email' : 'Consumer ID or Email'}</Text>
+          <TextInput
+            style={styles.input}
+            value={email}
+            editable={false}
+            placeholderTextColor="#9CA3AF"
+          />
+        </View>
+
+        {/* Password — read only */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Password</Text>
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              value={password}
+              editable={false}
+              secureTextEntry={!showPassword}
+              placeholderTextColor="#9CA3AF"
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color="#6B7280"
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* OTP input */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Email Verification</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter 6-digit verification code"
+            placeholderTextColor="#9CA3AF"
+            value={otp}
+            onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, ''))}
+            keyboardType="number-pad"
+            maxLength={6}
+          />
+          <Text style={styles.otpNote}>
+            OTP has been sent to your registered email address
+          </Text>
+        </View>
+
+        {/* Forgot Password */}
+        <TouchableOpacity
+          style={styles.forgotContainer}
+          onPress={() => router.push('/screens/ForgotPasswordScreen')}
+        >
+          <Text style={styles.forgotText}>Forgot Password?</Text>
+        </TouchableOpacity>
+
+        {/* Verify & Login */}
+        <TouchableOpacity style={styles.loginButton} onPress={handleVerify} disabled={loading}>
+          {loading
+            ? <ActivityIndicator color="#FFFFFF" />
+            : <Text style={styles.loginButtonText}>Verify & Login</Text>
+          }
+        </TouchableOpacity>
+
+        {/* Resend OTP */}
+        <View style={styles.resendContainer}>
+          <Text style={styles.resendText}>{"Didn't receive the code?"} </Text>
+          {resendLoading ? (
+            <ActivityIndicator size="small" color="#0B3C5D" />
+          ) : countdown > 0 ? (
+            <Text style={styles.resendCountdown}>Resend in {countdown}s</Text>
+          ) : (
+            <TouchableOpacity onPress={handleResendOTP}>
+              <Text style={styles.resendLink}>Resend OTP</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Register link — Consumer only */}
+        {!isAdmin && (
+          <Text style={styles.registerText}>
+            {"Don't have an account? "}
+            <Text
+              style={styles.registerLink}
+              onPress={() => router.push('/screens/RegisterScreen')}
+            >
+              Register Now
             </Text>
-        }
-      </TouchableOpacity>
-    </View>
+          </Text>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 28,
-    paddingTop: 60, alignItems: 'center',
+    flexGrow: 1, backgroundColor: '#FFFFFF', alignItems: 'center',
+    paddingHorizontal: 28, paddingTop: 20, paddingBottom: 40,
   },
-  backBtn: { position: 'absolute', top: 50, left: 20, padding: 8 },
-  iconContainer: {
-    width: 80, height: 80, borderRadius: 40, backgroundColor: '#EFF6FF',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 20, marginTop: 20,
+  headerLabel: {
+    fontFamily: 'Inter_400Regular', fontSize: 12, color: '#9CA3AF',
+    alignSelf: 'flex-start', marginBottom: 24, letterSpacing: 0.5,
   },
-  title: {
-    fontFamily: 'Poppins_700Bold', fontSize: 22, color: '#1F2933',
-    marginBottom: 8, textAlign: 'center',
+  logoContainer: {
+    width: 64, height: 64, backgroundColor: '#0B3C5D', borderRadius: 16,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 12,
   },
-  subtitle: {
-    fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280',
-    textAlign: 'center', lineHeight: 22, marginBottom: 28,
+  logo:      { width: 40, height: 40 },
+  brandName: { fontFamily: 'Poppins_700Bold', fontSize: 22, color: '#1F2933', marginBottom: 4 },
+  subtitle:  {
+    fontFamily: 'Inter_400Regular', fontSize: 12, color: '#6B7280',
+    marginBottom: 28, textAlign: 'center',
   },
-  emailHighlight: { color: '#0B3C5D', fontFamily: 'Inter_600SemiBold' },
+  inputGroup:      { width: '100%', marginBottom: 14 },
+  label:           { fontFamily: 'Inter_500Medium', fontSize: 13, color: '#374151', marginBottom: 6 },
   input: {
-    width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.1)', borderRadius: 8,
-    paddingHorizontal: 16, paddingVertical: 14, fontFamily: 'Inter_400Regular',
-    fontSize: 24, color: '#1F2933', marginBottom: 14,
-    textAlign: 'center', letterSpacing: 10,
+    width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.08)', borderRadius: 8,
+    paddingHorizontal: 16, paddingVertical: 13, fontFamily: 'Inter_400Regular',
+    fontSize: 14, color: '#1F2933', borderWidth: 1,
+    borderColor: 'rgba(107, 114, 128, 0.15)',
   },
-  noticeBox: {
-    flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#EFF6FF',
-    borderRadius: 8, padding: 12, width: '100%', marginBottom: 24, gap: 8,
+  passwordContainer: {
+    width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.08)', borderRadius: 8,
+    paddingHorizontal: 16, paddingVertical: 13, flexDirection: 'row',
+    alignItems: 'center', borderWidth: 1, borderColor: 'rgba(107, 114, 128, 0.15)',
   },
-  noticeText: {
-    flex: 1, fontFamily: 'Inter_400Regular', fontSize: 12, color: '#0B3C5D', lineHeight: 18,
-  },
-  button: {
+  passwordInput:   { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 14, color: '#1F2933' },
+  otpNote:         { fontFamily: 'Inter_400Regular', fontSize: 11, color: '#6B7280', marginTop: 6 },
+  forgotContainer: { alignSelf: 'flex-end', marginBottom: 20, marginTop: 4 },
+  forgotText:      { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#0B3C5D' },
+  loginButton: {
     width: '100%', backgroundColor: '#0B3C5D', borderRadius: 8,
-    paddingVertical: 15, alignItems: 'center', marginBottom: 14,
+    paddingVertical: 15, alignItems: 'center', marginBottom: 16,
   },
-  buttonText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#FFFFFF' },
-  resendBtn: { paddingVertical: 10 },
-  resendBtnDisabled: { opacity: 0.5 },
-  resendText: { fontFamily: 'Inter_500Medium', fontSize: 14, color: '#0B3C5D' },
+  loginButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#FFFFFF' },
+  resendContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  resendText:      { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280' },
+  resendLink:      { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#0B3C5D' },
+  resendCountdown: { fontFamily: 'Inter_500Medium', fontSize: 13, color: '#9CA3AF' },
+  registerText:    { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280' },
+  registerLink:    { color: '#0B3C5D', fontFamily: 'Inter_600SemiBold' },
 });
