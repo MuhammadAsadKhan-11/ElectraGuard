@@ -18,7 +18,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // ─── Gemini Setup ─────────────────────────────────────────────────────────────
 
-const genAI = new GoogleGenerativeAI("AIzaSyBNcsJASf3NgFK3g6_Z0L1a8ky-OWv1hIE");
+const genAI = new GoogleGenerativeAI("APIkey here"); // api key here
 
 // ✅ gemini-2.0-flash — works with latest @google/generative-ai SDK
 const model = genAI.getGenerativeModel({
