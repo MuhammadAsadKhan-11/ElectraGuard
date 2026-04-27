@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Buffer } from 'buffer';
+import * as Crypto from 'expo-crypto';
 import { router } from 'expo-router';
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { collection, doc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
@@ -55,7 +57,6 @@ export default function RegisterScreen() {
           existingDoc.mobileNumber === form.mobileNumber;
 
         if (allCredentialsMatch) {
-          // ── Case A: Email + all other credentials match → full duplicate ───────
           Alert.alert(
             'Account Already Exists',
             'All your credentials already exist in our system. This account is already registered. Please login instead.',
@@ -65,7 +66,6 @@ export default function RegisterScreen() {
             ]
           );
         } else {
-          // ── Case B: Only email matches → email taken by a different user ───────
           Alert.alert(
             'Email Already In Use',
             'This email address is already registered with a different account. Please use a different email.',
@@ -82,7 +82,16 @@ export default function RegisterScreen() {
       const user = userCredential.user;
       await sendEmailVerification(user);
 
-      // ── Step 4: Save consumer data to Firestore ───────────────────────────────
+      // ── Step 4: Password encrypt karo ────────────────────────────────────────
+      // SHA256 hash — one-way, verify karne ke liye
+      const passwordHash = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        form.password
+      );
+      // Base64 encode — reset flow ke liye silently sign in karne ke liye
+      const passwordEncoded = Buffer.from(form.password).toString('base64');
+
+      // ── Step 5: Save consumer data to Firestore ───────────────────────────────
       await setDoc(doc(db, 'consumers', user.uid), {
         uid: user.uid,
         fullName: form.fullName,
@@ -93,6 +102,8 @@ export default function RegisterScreen() {
         role: 'consumer',
         emailVerified: false,
         isVerified: false,
+        passwordHash,      // SHA256 — koi decode nahi kar sakta
+        passwordEncoded,   // base64 — reset flow ke liye
         createdAt: serverTimestamp(),
       });
 
@@ -103,7 +114,6 @@ export default function RegisterScreen() {
       );
 
     } catch (error: any) {
-      // ── Firebase Auth error fallback ──────────────────────────────────────────
       switch (error.code) {
         case 'auth/email-already-in-use':
           Alert.alert(

@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
   retryBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 
   // Page header
-  pageHeader: { marginTop: 20, marginBottom: 16 },
+  pageHeader: { marginTop: 50, marginBottom: 16 },
   pageTitle: { fontSize: 22, fontWeight: "800", color: "#1A202C" },
   pageSubtitle: { fontSize: 13, color: "#718096", marginTop: 3 },
 

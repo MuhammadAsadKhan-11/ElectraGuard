@@ -17,7 +17,7 @@ const EMAILJS_SERVICE_ID           = 'service_wynnt38';
 const EMAILJS_PUBLIC_KEY           = 'hMZkNajE1DpuQeOMQ';
 const EMAILJS_PRIVATE_KEY          = 'n5Zknt7IKTmMQdj_C9dDA';
 const EMAILJS_CONSUMER_TEMPLATE_ID = 'template_p7vjo2g';
-const EMAILJS_ADMIN_TEMPLATE_ID    = 'template_p7vjo2g'; // ← Admin ka alag OTP template ho to yahan change karo
+const EMAILJS_ADMIN_TEMPLATE_ID    = 'template_kx85hs2g'; // ← Admin ka alag OTP template ho to yahan change karo
 
 // ─── EmailJS sender ────────────────────────────────────────────────────────────
 const sendEmail = async (

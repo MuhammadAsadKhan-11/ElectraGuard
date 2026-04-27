@@ -428,15 +428,10 @@ export default function ReportScreen() {
             {
               icon: 'mail-outline',
               label: 'Email',
-              value: 'support@lesco.gov.pk',
-              action: () => Linking.openURL('mailto:support@lesco.gov.pk'),
+              value: 'support@Electraguard.pk',
+              action: () => Linking.openURL('mailto:asadkhans2310861@gmail.com'),
             },
-            {
-              icon: 'globe-outline',
-              label: 'Website',
-              value: 'lesco.gov.pk',
-              action: () => Linking.openURL('https://lesco.gov.pk'),
-            },
+          
           ].map(({ icon, label, value, action }) => (
             <TouchableOpacity
               key={label}

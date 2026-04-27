@@ -231,8 +231,8 @@ export default function SupportScreen(): React.ReactElement {
             onPress={() => router.back()}
             activeOpacity={0.7}
           >
-            <Ionicons name="arrow-back" size={18} color="#0B3C5D" />
           </TouchableOpacity>
+          <Ionicons name="arrow-back" size={18} color="#0B3C5D" />
           <Text style={styles.headerTitle}>Help & Support</Text>
           <Text style={styles.headerSubtitle}>
             Get answers to your questions and learn about energy conservation

@@ -31,7 +31,7 @@ import { auth, db } from '../../firebaseConfig';
 // ─── Types ───────────────────────────────────────────────────────
 interface ConsumerData {
   consumerId: string;
-  name: string;
+  fullName: string;
   email: string;
   mobileNumber: string;
   address: string;
@@ -107,8 +107,31 @@ export default function ConsumerDashboard() {
   const [refreshing, setRefreshing]     = useState(false);
   const [today]                         = useState(new Date());
 
+  // ── Fetch top 10 consumptions ──────────────────────────────────
+  // ✅ useCallback so it has a stable reference
+  const fetchConsumptions = useCallback(async (consumerId: string) => {
+    try {
+      const q = query(
+        collection(db, 'consumptions'),
+        where('consumerId', '==', consumerId),
+        orderBy('uploadedAt', 'desc'),
+        limit(10)
+      );
+      const snap = await getDocs(q);
+      const records: ConsumptionRecord[] = snap.docs.map(d => ({
+        id: d.id,
+        ...(d.data() as Omit<ConsumptionRecord, 'id'>),
+        uploadedAt: d.data().uploadedAt?.toDate?.() ?? new Date(),
+      }));
+      setConsumptions(records);
+    } catch (e) {
+      console.error('Error fetching consumptions:', e);
+    }
+  }, []); // db is a stable import, no deps needed
+
   // ── Fetch consumer by UID (primary) then fallback to email query ──
-  const fetchConsumerData = async (uid: string, email: string | null) => {
+  // ✅ useCallback with fetchConsumptions as dependency
+  const fetchConsumerData = useCallback(async (uid: string, email: string | null) => {
     try {
       // 1️⃣ Try direct UID lookup in consumers collection
       const docSnap = await getDoc(doc(db, 'consumers', uid));
@@ -147,7 +170,7 @@ export default function ConsumerDashboard() {
     } catch (e) {
       console.error('Error fetching consumer:', e);
     }
-  };
+  }, [fetchConsumptions]); // ✅ fetchConsumptions is stable, so this is safe
 
   // ── Auth listener ──────────────────────────────────────────────
   useEffect(() => {
@@ -161,35 +184,14 @@ export default function ConsumerDashboard() {
       setLoading(false);
     });
     return unsub;
-  }, []);
-
-  // ── Fetch top 10 consumptions ──────────────────────────────────
-  const fetchConsumptions = async (consumerId: string) => {
-    try {
-      const q = query(
-        collection(db, 'consumptions'),
-        where('consumerId', '==', consumerId),
-        orderBy('uploadedAt', 'desc'),
-        limit(10)
-      );
-      const snap = await getDocs(q);
-      const records: ConsumptionRecord[] = snap.docs.map(d => ({
-        id: d.id,
-        ...(d.data() as Omit<ConsumptionRecord, 'id'>),
-        uploadedAt: d.data().uploadedAt?.toDate?.() ?? new Date(),
-      }));
-      setConsumptions(records);
-    } catch (e) {
-      console.error('Error fetching consumptions:', e);
-    }
-  };
+  }, [fetchConsumerData]); // ✅ no warning — fetchConsumerData is now stable
 
   // ── Refresh ───────────────────────────────────────────────────
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     if (consumer) await fetchConsumptions(consumer.consumerId);
     setRefreshing(false);
-  }, [consumer]);
+  }, [consumer, fetchConsumptions]); // ✅ both are stable
 
   // ── Pick CSV ──────────────────────────────────────────────────
   const handlePickCSV = async () => {
@@ -225,7 +227,7 @@ export default function ConsumerDashboard() {
     try {
       await addDoc(collection(db, 'consumptions'), {
         consumerId:    consumer.consumerId,
-        consumerName:  consumer.name,
+        consumerName:  consumer.fullName,
         email:         consumer.email,
         dateRange:     getDateRange(),
         totalUnits:    csvStats.totalUnits,
@@ -261,7 +263,7 @@ export default function ConsumerDashboard() {
   }
 
   // ── Get first name only for greeting ─────────────────────────
-  const firstName = consumer?.name?.split(' ')[0] ?? '—';
+  const firstName = consumer?.fullName?.split(' ')[0] ?? '—';
 
   return (
     <View style={styles.screen}>
@@ -291,7 +293,6 @@ export default function ConsumerDashboard() {
           </View>
           <View style={styles.welcomeRow}>
             <View>
-              {/* ✅ Real consumer name from Firebase */}
               <Text style={styles.welcomeText}>
                 Welcome back, {firstName}
               </Text>

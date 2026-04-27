@@ -7,17 +7,19 @@ import {
 } from 'react-native';
 
 export default function ResetOTPVerifyScreen() {
-  const { email, otp: storedOtp, expiresAt } = useLocalSearchParams<{
-    email: string; otp: string; expiresAt: string;
+  const { email, otp: storedOtp, expiresAt, portal } = useLocalSearchParams<{
+    email: string; otp: string; expiresAt: string; portal: string;
   }>();
 
-  const [otp, setOtp] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [otp, setOtp]           = useState('');
+  const [loading, setLoading]   = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [canResend, setCanResend] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
-  // Countdown timer
+  const isAdmin  = portal === 'admin';
+  const accent   = isAdmin ? '#1A73E8' : '#2EC4B6';
+
   useEffect(() => {
     if (countdown <= 0) { setCanResend(true); return; }
     const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
@@ -30,20 +32,18 @@ export default function ResetOTPVerifyScreen() {
     }
     setLoading(true);
     try {
-      // Expiry check
       if (Date.now() > Number(expiresAt)) {
         Alert.alert('Expired', 'OTP has expired. Please request a new one.');
         setLoading(false); return;
       }
-      // Match check
       if (otp.trim() !== storedOtp?.trim()) {
         Alert.alert('Invalid Code', 'The code you entered is incorrect.');
         setLoading(false); return;
       }
-      // Success → go to Reset Password screen
+      // Pass portal forward to ResetPasswordScreen
       router.replace({
         pathname: '/screens/ResetPasswordScreen',
-        params: { email },
+        params: { email, portal: portal ?? 'consumer' },
       });
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Verification failed.');
@@ -53,7 +53,7 @@ export default function ResetOTPVerifyScreen() {
   };
 
   const handleResend = () => {
-    router.back(); // Go back to ForgotPasswordScreen to resend
+    router.back(); // Back to ForgotPasswordScreen
   };
 
   return (
@@ -61,25 +61,24 @@ export default function ResetOTPVerifyScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={22} color="#2EC4B6" />
+        <Ionicons name="arrow-back" size={22} color={accent} />
       </TouchableOpacity>
 
       <Text style={styles.headerTitle}>Verify Code</Text>
 
-      <View style={styles.iconContainer}>
+      <View style={[styles.iconContainer, { backgroundColor: accent }]}>
         <Ionicons name="shield-checkmark-outline" size={32} color="#FFFFFF" />
       </View>
 
       <Text style={styles.title}>Enter Verification Code</Text>
       <Text style={styles.subtitle}>
         We sent a 6-digit code to{'\n'}
-        <Text style={styles.emailHighlight}>{email}</Text>
+        <Text style={[styles.emailHighlight, { color: accent }]}>{email}</Text>
       </Text>
 
-      {/* OTP Input */}
       <TextInput
         ref={inputRef}
-        style={styles.otpInput}
+        style={[styles.otpInput, { borderColor: accent }]}
         placeholder="● ● ● ● ● ●"
         placeholderTextColor="#B0BEC5"
         value={otp}
@@ -90,66 +89,54 @@ export default function ResetOTPVerifyScreen() {
         autoFocus
       />
 
-      {/* Expiry notice */}
       <View style={styles.noticeBox}>
-        <Ionicons name="time-outline" size={16} color="#2EC4B6" />
+        <Ionicons name="time-outline" size={16} color={accent} />
         <Text style={styles.noticeText}>Code expires in 10 minutes</Text>
       </View>
 
-      {/* Verify Button */}
-      <TouchableOpacity style={styles.verifyButton} onPress={handleVerify} disabled={loading}>
+      <TouchableOpacity
+        style={[styles.verifyButton, { backgroundColor: accent }]}
+        onPress={handleVerify}
+        disabled={loading}
+      >
         {loading
           ? <ActivityIndicator color="#FFFFFF" />
           : <Text style={styles.verifyButtonText}>Verify Code</Text>}
       </TouchableOpacity>
 
-      {/* Resend */}
       <View style={styles.resendRow}>
-        <Text style={styles.resendLabel}>Didn't receive the code? </Text>
+        <Text style={styles.resendLabel}>{"Didn't receive the code?"} </Text>
         {canResend
           ? <TouchableOpacity onPress={handleResend}>
-              <Text style={styles.resendLink}>Resend</Text>
+              <Text style={[styles.resendLink, { color: accent }]}>Resend</Text>
             </TouchableOpacity>
           : <Text style={styles.resendCountdown}>Resend in {countdown}s</Text>
         }
       </View>
 
       <TouchableOpacity onPress={() => router.push('/screens/LoginScreen')}>
-        <Text style={styles.backToLogin}>Back to Login</Text>
+        <Text style={[styles.backToLogin, { color: accent }]}>Back to Login</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 24, paddingTop: 60, alignItems: 'center' },
-  backBtn: { position: 'absolute', top: 50, left: 20, padding: 8 },
-  headerTitle: { fontFamily: 'Poppins_600SemiBold', fontSize: 16, color: '#1F2933', marginBottom: 32 },
-  iconContainer: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#2EC4B6', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
-  title: { fontFamily: 'Poppins_700Bold', fontSize: 22, color: '#1F2933', marginBottom: 10, textAlign: 'center' },
-  subtitle: { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20, marginBottom: 28 },
-  emailHighlight: { fontFamily: 'Inter_600SemiBold', color: '#2EC4B6' },
-  otpInput: {
-    width: '100%',
-    backgroundColor: '#F9FAFB',
-    borderWidth: 2,
-    borderColor: '#2EC4B6',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-    fontFamily: 'Inter_700Bold',
-    fontSize: 28,
-    color: '#1F2933',
-    marginBottom: 16,
-    letterSpacing: 12,
-  },
-  noticeBox: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 28 },
-  noticeText: { fontFamily: 'Inter_400Regular', fontSize: 12, color: '#6B7280' },
-  verifyButton: { width: '100%', backgroundColor: '#2EC4B6', borderRadius: 8, paddingVertical: 15, alignItems: 'center', marginBottom: 16 },
-  verifyButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#FFFFFF' },
-  resendRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  resendLabel: { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280' },
-  resendLink: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: '#2EC4B6' },
+  container:       { flex: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 24, paddingTop: 60, alignItems: 'center' },
+  backBtn:         { position: 'absolute', top: 50, left: 20, padding: 8 },
+  headerTitle:     { fontFamily: 'Poppins_600SemiBold', fontSize: 16, color: '#1F2933', marginBottom: 32 },
+  iconContainer:   { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
+  title:           { fontFamily: 'Poppins_700Bold', fontSize: 22, color: '#1F2933', marginBottom: 10, textAlign: 'center' },
+  subtitle:        { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20, marginBottom: 28 },
+  emailHighlight:  { fontFamily: 'Inter_600SemiBold' },
+  otpInput:        { width: '100%', backgroundColor: '#F9FAFB', borderWidth: 2, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 18, fontFamily: 'Inter_700Bold', fontSize: 28, color: '#1F2933', marginBottom: 16, letterSpacing: 12 },
+  noticeBox:       { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 28 },
+  noticeText:      { fontFamily: 'Inter_400Regular', fontSize: 12, color: '#6B7280' },
+  verifyButton:    { width: '100%', borderRadius: 8, paddingVertical: 15, alignItems: 'center', marginBottom: 16 },
+  verifyButtonText:{ fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#FFFFFF' },
+  resendRow:       { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  resendLabel:     { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280' },
+  resendLink:      { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   resendCountdown: { fontFamily: 'Inter_500Medium', fontSize: 13, color: '#9CA3AF' },
-  backToLogin: { fontFamily: 'Inter_500Medium', fontSize: 14, color: '#2EC4B6' },
+  backToLogin:     { fontFamily: 'Inter_500Medium', fontSize: 14 },
 });
