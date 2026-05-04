@@ -108,7 +108,7 @@ export async function seedAllData(forceUpdate = false): Promise<boolean> {
       order: 3,
       viewGuideLabel: "View Detailed Safety Guide",
       viewGuideUrl: "https://www.nepra.org.pk/Regulation/Guidelines.aspx",
-      helplineNumber: "1800-XXX-XXXX",
+      helplineNumber: "03258568691",
       communityMessage:
         "By reporting electricity theft and following energy-saving practices, you contribute to a safer, more sustainable community. Every action counts!",
       tamperingSigns: [

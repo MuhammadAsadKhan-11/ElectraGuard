@@ -122,6 +122,28 @@ const ArticleCard: React.FC<{ article: KBArticle }> = ({ article }) => (
 );
 
 // ─────────────────────────────────────────────────────────────
+// WHATSAPP HELPER
+// ─────────────────────────────────────────────────────────────
+const openWhatsApp = async (phoneNumber: string) => {
+  // Leading 0 hata ke 92 (Pakistan code) add karo
+  const cleaned = phoneNumber.replace(/^0/, "");
+  const fullNumber = cleaned.startsWith("92") ? cleaned : `92${cleaned}`;
+  const message = encodeURIComponent("Hello! I need support.");
+
+  // Pehle native deep link try karo (direct chat open karta hai)
+  const whatsappNative = `whatsapp://send?phone=${fullNumber}&text=${message}`;
+  const whatsappWeb = `https://wa.me/${fullNumber}?text=${message}`;
+
+  const canOpen = await Linking.canOpenURL(whatsappNative);
+  if (canOpen) {
+    Linking.openURL(whatsappNative);
+  } else {
+    // Fallback: browser se open karo
+    Linking.openURL(whatsappWeb);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────
 export default function SupportScreen(): React.ReactElement {
@@ -241,20 +263,22 @@ export default function SupportScreen(): React.ReactElement {
 
         {/* ── Contact Options ── */}
         <View style={styles.contactRow}>
-          {/* Live Chat */}
+          {/* ── Live Chat → WhatsApp redirect ── */}
           <TouchableOpacity
             style={styles.contactCard}
-            onPress={() => router.push("/screens/ChatbotScreen" as any)}
+            onPress={() =>
+              openWhatsApp(contact?.helplineNumber || "03258568691")
+            }
             activeOpacity={0.8}
           >
-            <View style={[styles.contactIconBox, { backgroundColor: "#EFF6FF" }]}>
-              <Ionicons name="chatbubble-ellipses-outline" size={22} color="#0B3C5D" />
+            <View style={[styles.contactIconBox, { backgroundColor: "#E7F7EC" }]}>
+              <Ionicons name="logo-whatsapp" size={22} color="#25D366" />
             </View>
             <Text style={styles.contactLabel}>
               {contact?.liveChatLabel || "Live Chat"}
             </Text>
             <Text style={styles.contactSub}>
-              {contact?.liveChatSubLabel || "Chat with support team"}
+              {contact?.liveChatSubLabel || "Chat on WhatsApp"}
             </Text>
             <View style={styles.onlineBadge}>
               <View style={styles.onlineDot} />
@@ -378,7 +402,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 16,
     padding: 18,
-    marginTop: 16,
+    marginTop: 40,
     marginBottom: 14,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
