@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 20, paddingTop: 16, backgroundColor: Colors.white,
-    borderRadius: 16, margin: 16,
+    borderRadius: 16, margin: 16,marginTop: 40,
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 3,
   },
   headerTitle: { fontSize: 22, fontWeight: '700', color: Colors.text },

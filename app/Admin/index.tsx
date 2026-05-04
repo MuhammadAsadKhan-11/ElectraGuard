@@ -1,16 +1,21 @@
 import { useRouter } from 'expo-router';
-import React from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
-    Dimensions,
-    Image,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  collection, getDocs, query, where,
+} from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
+import {
+  Dimensions,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { consumptionChartData, dashboardStats } from '../../data/mockData';
+import { auth, db } from '../../firebaseConfig';
 
 const { width } = Dimensions.get('window');
 const CHART_WIDTH = width - 64;
@@ -29,15 +34,13 @@ const Colors = {
   border: '#E5E5EA',
 };
 
-// ─── KPI Card ────────────────────────────────────────────────────────────────
-// Replace `require('...')` paths with your actual image assets
 const KPI_IMAGES = [
-  require('../../assets/Users.png'), // Replace: total consumers icon
-  require('../../assets/ChartLine.png'), // Replace: active members icon
-  require('../../assets/ShieldWarning.png'), // Replace: high risk icon
-  require('../../assets/Suitcase.png'), // Replace: theft cases icon
-  require('../../assets/CurrencyDollar.png'), // Replace: revenue loss icon
-  require('../../assets/CheckCircle.png'), // Replace: cases resolved icon
+  require('../../assets/Users.png'),
+  require('../../assets/ChartLine.png'),
+  require('../../assets/ShieldWarning.png'),
+  require('../../assets/Suitcase.png'),
+  require('../../assets/CurrencyDollar.png'),
+  require('../../assets/CheckCircle.png'),
 ];
 
 const KPICard = ({
@@ -164,7 +167,35 @@ const MiniChart = () => {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function DashboardScreen() {
   const router = useRouter();
-  const adminName = 'Zain Ahmed'; // TODO: Replace with auth context
+
+  // ✅ Admin name state
+  const [adminName, setAdminName] = useState('Admin');
+
+  // ✅ Firebase se admin name fetch karo
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          // Admins collection mein uid se dhundo
+          const adminSnap = await getDocs(
+            query(collection(db, 'admins'), where('uid', '==', user.uid))
+          );
+
+          if (!adminSnap.empty) {
+            const adminData = adminSnap.docs[0].data();
+            // ✅ 'name' field Firebase se fetch karo
+            // Agar tumhara field alag hai (jaise 'fullName', 'adminName') toh woh likho
+            const fetchedName = adminData.name || adminData.fullName || adminData.email || 'Admin';
+            setAdminName(fetchedName);
+          }
+        } catch (error) {
+          console.log('Error fetching admin name:', error);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -174,21 +205,20 @@ export default function DashboardScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>Admin Dashboard</Text>
+            {/* ✅ Firebase se fetch kiya gaya name */}
             <Text style={styles.adminName}>{adminName}</Text>
             <Text style={styles.adminRole}>System Administrator</Text>
           </View>
 
-          {/* Bell icon — replace require() with your bell image */}
           <TouchableOpacity
             style={styles.bellBtn}
             onPress={() => router.push('/Admin/notifications')}
           >
             <Image
-              source={require('../../assets/Bell.png')} // Replace: your bell image
+              source={require('../../assets/Bell.png')}
               style={styles.bellImage}
               resizeMode="contain"
             />
-            {/* Notification badge — you can drive this from Firebase count */}
             <View style={styles.bellBadge}>
               <Text style={styles.bellBadgeText}>3</Text>
             </View>
@@ -287,7 +317,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    backgroundColor: Colors.white, padding: 20, margin: 16, borderRadius: 16,
+    backgroundColor: Colors.white, padding: 20, margin: 16, borderRadius: 16, marginTop: 40,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
   headerTitle: { fontSize: 22, fontWeight: '700', color: Colors.text },

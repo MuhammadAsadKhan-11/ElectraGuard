@@ -4,52 +4,49 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+  ActivityIndicator, Alert, Image, KeyboardAvoidingView,
+  Platform, ScrollView, StatusBar, StyleSheet, Text,
+  TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { auth, db } from '../../firebaseConfig';
 
-// ── EmailJS Config ─────────────────────────────────────────────────────────────
 const EMAILJS_SERVICE_ID           = 'service_wynnt38';
 const EMAILJS_PUBLIC_KEY           = 'hMZkNajE1DpuQeOMQ';
 const EMAILJS_PRIVATE_KEY          = 'n5Zknt7IKTmMQdj_C9dDA';
-const EMAILJS_CONSUMER_TEMPLATE_ID = 'template_p7vjo2g'; // ← Consumer ka OTP template ho to yahan change karo
-const EMAILJS_ADMIN_TEMPLATE_ID    = 'template_kx85hs2'; // ← Admin ka alag OTP template ho to yahan change karo
+const EMAILJS_CONSUMER_TEMPLATE_ID = 'template_p7vjo2g';
+const EMAILJS_ADMIN_TEMPLATE_ID    = 'template_kx85hs2';
 
 export default function LoginOTPScreen() {
   const params = useLocalSearchParams<{
-    email:         string;
-    password:      string;
-    role:          string;
+    email:          string;
+    password:       string;
+    role:           string;
     consumerDocId?: string;
     adminDocId?:    string;
+    isRegistering?: string; // ← "true" sirf registration flow mein
   }>();
 
-  const { email, password, role, consumerDocId = '', adminDocId = '' } = params;
+  const {
+    email,
+    password,
+    role,
+    consumerDocId = '',
+    adminDocId    = '',
+    isRegistering = 'false',
+  } = params;
 
   const [showPassword, setShowPassword]   = useState(false);
   const [otp, setOtp]                     = useState('');
   const [loading, setLoading]             = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [countdown, setCountdown]         = useState(0);
-  const timerRef                          = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isAdmin      = role === 'Admin';
   const firestoreCol = isAdmin ? 'admins' : 'consumers';
   const docId        = isAdmin ? adminDocId : consumerDocId;
   const templateId   = isAdmin ? EMAILJS_ADMIN_TEMPLATE_ID : EMAILJS_CONSUMER_TEMPLATE_ID;
 
-  // ─── Start countdown on mount ─────────────────────────────────────────────────
   useEffect(() => {
     startCountdown();
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
@@ -66,11 +63,10 @@ export default function LoginOTPScreen() {
     }, 1000);
   };
 
-  // ─── Resend OTP ───────────────────────────────────────────────────────────────
+  // ─── Resend OTP ──────────────────────────────────────────────────────────────
   const handleResendOTP = async () => {
     if (countdown > 0) return;
     setResendLoading(true);
-
     try {
       const newOtp       = Math.floor(100000 + Math.random() * 900000).toString();
       const otpExpiresAt = Date.now() + 10 * 60 * 1000;
@@ -79,6 +75,7 @@ export default function LoginOTPScreen() {
         loginOtp:          newOtp,
         loginOtpExpiresAt: otpExpiresAt,
         isVerified:        false,
+        lastVerifiedAt:    null, // ← reset karo jab resend karo
       });
 
       const payload = {
@@ -91,7 +88,7 @@ export default function LoginOTPScreen() {
 
       const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json', origin: 'http://localhost' },
+        headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(payload),
       });
 
@@ -109,7 +106,7 @@ export default function LoginOTPScreen() {
     }
   };
 
-  // ─── Verify & Login ───────────────────────────────────────────────────────────
+  // ─── Verify OTP & Login ──────────────────────────────────────────────────────
   const handleVerify = async () => {
     if (!otp || otp.length !== 6) {
       Alert.alert('Error', 'Please enter the 6-digit OTP.');
@@ -131,32 +128,34 @@ export default function LoginOTPScreen() {
       const storedOtp = data?.loginOtp as string;
       const expiresAt = data?.loginOtpExpiresAt as number;
 
-      // Expiry check
+      // ── Expiry check ─────────────────────────────────────────────────────────
       if (Date.now() > expiresAt) {
         Alert.alert('OTP Expired', 'Your OTP has expired. Please request a new one.');
         setLoading(false);
         return;
       }
 
-      // Match check
+      // ── Match check ──────────────────────────────────────────────────────────
       if (otp.trim() !== storedOtp) {
         Alert.alert('Invalid OTP', 'The OTP you entered is incorrect.');
         setLoading(false);
         return;
       }
 
-      // OTP sahi — sign in karo
+      // ── OTP sahi hai — Firebase Auth sign in ─────────────────────────────────
       await signInWithEmailAndPassword(auth, email, password);
 
+      // ── Firestore update: verified + 1-week window start ─────────────────────
       await updateDoc(docRef, {
         isVerified:        true,
+        lastVerifiedAt:    Date.now(), // ← 1-week timer yahan se shuru hoga
         loginOtp:          null,
         loginOtpExpiresAt: null,
       });
 
-      // Role ke hisaab se navigate
-     router.replace((isAdmin ? '/Admin' : '/Consumer') as any);
-
+      // ── Navigate to dashboard ─────────────────────────────────────────────────
+      // isRegistering ho ya normal login — dono mein same dashboard
+      router.replace((isAdmin ? '/Admin' : '/Consumer') as any);
 
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Verification failed.');
@@ -165,7 +164,6 @@ export default function LoginOTPScreen() {
     }
   };
 
-  // ─── UI ───────────────────────────────────────────────────────────────────────
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -174,19 +172,10 @@ export default function LoginOTPScreen() {
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-        {/* Header label */}
         <Text style={styles.headerLabel}>
           {isAdmin ? 'Admin Authentication' : 'Login Authentication'}
         </Text>
 
-        {/*
-          ⚡ LIGHTNING IMAGE:
-          Jab tum lightning.png assets mein dalo to
-          require('../../assets/logo.png')
-          ko
-          require('../../assets/lightning.png')
-          se replace karo
-        */}
         <View style={styles.logoContainer}>
           <Image
             source={require('../../assets/logo.png')}
@@ -200,7 +189,7 @@ export default function LoginOTPScreen() {
 
         {/* Email — read only */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>{isAdmin ? 'Admin Email' : 'Consumer ID or Email'}</Text>
+          <Text style={styles.label}>{isAdmin ? 'Admin Email' : 'Email'}</Text>
           <TextInput
             style={styles.input}
             value={email}
@@ -230,12 +219,12 @@ export default function LoginOTPScreen() {
           </View>
         </View>
 
-        {/* OTP input */}
+        {/* OTP Input */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Email Verification</Text>
+          <Text style={styles.label}>Email Verification Code</Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter 6-digit verification code"
+            placeholder="Enter 6-digit code"
             placeholderTextColor="#9CA3AF"
             value={otp}
             onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, ''))}
@@ -243,7 +232,7 @@ export default function LoginOTPScreen() {
             maxLength={6}
           />
           <Text style={styles.otpNote}>
-            OTP has been sent to your registered email address
+            OTP sent to {email}. Valid for 10 minutes.
           </Text>
         </View>
 
@@ -255,8 +244,12 @@ export default function LoginOTPScreen() {
           <Text style={styles.forgotText}>Forgot Password?</Text>
         </TouchableOpacity>
 
-        {/* Verify & Login */}
-        <TouchableOpacity style={styles.loginButton} onPress={handleVerify} disabled={loading}>
+        {/* Verify Button */}
+        <TouchableOpacity
+          style={styles.loginButton}
+          onPress={handleVerify}
+          disabled={loading}
+        >
           {loading
             ? <ActivityIndicator color="#FFFFFF" />
             : <Text style={styles.loginButtonText}>Verify & Login</Text>
@@ -265,7 +258,7 @@ export default function LoginOTPScreen() {
 
         {/* Resend OTP */}
         <View style={styles.resendContainer}>
-          <Text style={styles.resendText}>{"Didn't receive the code?"} </Text>
+          <Text style={styles.resendText}>{"Didn't receive the code? "}</Text>
           {resendLoading ? (
             <ActivityIndicator size="small" color="#0B3C5D" />
           ) : countdown > 0 ? (
@@ -277,7 +270,6 @@ export default function LoginOTPScreen() {
           )}
         </View>
 
-        {/* Register link — Consumer only */}
         {!isAdmin && (
           <Text style={styles.registerText}>
             {"Don't have an account? "}

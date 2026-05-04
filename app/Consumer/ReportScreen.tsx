@@ -423,7 +423,7 @@ export default function ReportScreen() {
               icon: 'call-outline',
               label: 'Helpline',
               value: '118',
-              action: () => Linking.openURL('tel:118'),
+              action: () => Linking.openURL('tel:03258568691'),
             },
             {
               icon: 'mail-outline',

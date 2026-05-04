@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    backgroundColor: Colors.white, padding: 20, margin: 16, borderRadius: 16,
+    backgroundColor: Colors.white, padding: 20, margin: 16, borderRadius: 16,marginTop: 40,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
   headerTitle: { fontSize: 20, fontWeight: '700', color: Colors.text },

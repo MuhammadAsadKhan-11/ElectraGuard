@@ -8,13 +8,12 @@ const Colors = {
   border: '#E5E5EA',
 };
 
-// ── Replace these with your actual image assets ──────────────────────────────
 const TAB_ICONS = {
-  dashboard:  require('../../assets/Group 35.png'), // Replace: your dashboard icon
-  risks:      require('../../assets/Group 36.png'), // Replace: your risks icon
-  cases:      require('../../assets/Group 37.png'), // Replace: your cases icon
-  reports:    require('../../assets/Group 38.png'), // Replace: your reports icon
-  profile:    require('../../assets/Group 39.png'), // Replace: your profile icon
+  dashboard: require('../../assets/House.png'),
+  risks:     require('../../assets/Warning.png'),
+  cases:     require('../../assets/FileText.png'),
+  reports:   require('../../assets/ChartBar.png'),
+  profile:   require('../../assets/User.png'),
 };
 
 function TabIcon({
@@ -36,7 +35,10 @@ function TabIcon({
         ]}
         resizeMode="contain"
       />
-      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
+      <Text
+        numberOfLines={1}
+        style={[styles.tabLabel, focused && styles.tabLabelActive]}
+      >
         {label}
       </Text>
     </View>
@@ -50,6 +52,7 @@ export default function AdminLayout() {
         headerShown: false,
         tabBarStyle: styles.tabBar,
         tabBarShowLabel: false,
+        tabBarIconStyle: styles.tabBarIconStyle, // ← yeh add karo
       }}
     >
       <Tabs.Screen
@@ -93,11 +96,10 @@ export default function AdminLayout() {
         }}
       />
 
-      {/* Hidden screens - not in tab bar */}
-      <Tabs.Screen name="notifications"          options={{ href: null }} />
-      <Tabs.Screen name="CaseProfileScreen"      options={{ href: null }} />
-      <Tabs.Screen name="ConsumerProfileScreen"  options={{ href: null }} />
-      <Tabs.Screen name="DashboardScreen"        options={{ href: null }} />
+      <Tabs.Screen name="notifications"         options={{ href: null }} />
+      <Tabs.Screen name="CaseProfileScreen"     options={{ href: null }} />
+      <Tabs.Screen name="ConsumerProfileScreen" options={{ href: null }} />
+      <Tabs.Screen name="DashboardScreen"       options={{ href: null }} />
     </Tabs>
   );
 }
@@ -108,27 +110,33 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.border,
     height: 70,
-    paddingBottom: 8,
-    paddingTop: 4,
+    paddingBottom: 0,
+    paddingTop: 0,
     shadowColor: '#000',
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 10,
   },
+  tabBarIconStyle: {
+    height: 60,       // tab bar ki full height use karo
+    marginTop: 0,
+  },
   tabIconWrap: {
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 4,
-    gap: 3,
+    justifyContent: 'center',  // icon + label ko vertically center karo
+    gap: 4,
   },
   tabImage: {
     width: 24,
-    height: 24,
+    height: 24,       // fixed height, marginTop hata diya
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 11,
     color: Colors.textSecondary,
-    fontWeight: '500',
+    fontWeight: '600',
+    textAlign: 'center',
+    width: 65,        // "Dashboard" k liye enough width
   },
   tabLabelActive: {
     color: Colors.primary,

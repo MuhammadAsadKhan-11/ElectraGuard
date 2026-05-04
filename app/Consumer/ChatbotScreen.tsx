@@ -14,36 +14,57 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+/* ─────────────────────────────────────────────────────────────
+   RENDER BACKEND URL
+───────────────────────────────────────────────────────────── */
+const API_URL = "https://electraguard-backend.onrender.com/chat"; // ✅ /chat route added
 
-// ─── Gemini Setup ─────────────────────────────────────────────────────────────
-
-const genAI = new GoogleGenerativeAI("APIkey here"); // api key here
-
-// ✅ gemini-2.0-flash — works with latest @google/generative-ai SDK
-const model = genAI.getGenerativeModel({
-  model: "gemini-3-flash-preview",
-});
-
-// ✅ Use startChat + sendMessage instead of generateContent
+/* ─────────────────────────────────────────────────────────────
+   Backend Chat Function
+───────────────────────────────────────────────────────────── */
 const getGeminiResponse = async (message: string): Promise<string> => {
   try {
-    const chat = model.startChat({
-      history: [],
-      generationConfig: {
-        maxOutputTokens: 1000,
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({ message }),
     });
-    const result = await chat.sendMessage(message);
-    return result.response.text();
+
+    // ✅ Pehle text lo, phir parse karo - JSON error avoid hoga
+    const text = await response.text();
+
+    // ✅ Check karo HTML toh nahi aa raha (backend down hone pe)
+    if (text.startsWith("<") || text.startsWith("<!")) {
+      console.log("Backend returned HTML - server might be down or wrong URL");
+      return "Server is currently unavailable. Please try again later.";
+    }
+
+    // ✅ Safe JSON parse
+    let data: { reply?: string };
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.log("Invalid JSON received:", text);
+      return "Received invalid response from server.";
+    }
+
+    if (!response.ok) {
+      return "Server error. Please try again.";
+    }
+
+    return data.reply ?? "No response received.";
+
   } catch (error) {
-    console.error("Gemini Error:", error);
-    return "Sorry, I couldn't process your request right now.";
+    console.log("Backend Error:", error);
+    return "Unable to connect right now.";
   }
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
+/* ─────────────────────────────────────────────────────────────
+   Types
+───────────────────────────────────────────────────────────── */
 type Message = {
   id: string;
   text: string;
@@ -51,8 +72,9 @@ type Message = {
   time: string;
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
+/* ─────────────────────────────────────────────────────────────
+   Helpers
+───────────────────────────────────────────────────────────── */
 const getTime = (): string => {
   const now = new Date();
   const h = now.getHours();
@@ -68,8 +90,9 @@ const BOT_GREETING: Message = {
   time: getTime(),
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
+/* ─────────────────────────────────────────────────────────────
+   Components
+───────────────────────────────────────────────────────────── */
 const BotAvatar = () => (
   <View style={styles.avatarCircle}>
     <Text style={styles.avatarText}>⚡</Text>
@@ -80,15 +103,37 @@ const MessageBubble = ({ item }: { item: Message }) => {
   const isUser = item.sender === "user";
 
   return (
-    <View style={[styles.messageRow, isUser ? styles.messageRowUser : styles.messageRowBot]}>
+    <View
+      style={[
+        styles.messageRow,
+        isUser ? styles.messageRowUser : styles.messageRowBot,
+      ]}
+    >
       {!isUser && <BotAvatar />}
+
       <View style={styles.bubbleWrapper}>
-        <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}>
-          <Text style={[styles.bubbleText, isUser ? styles.bubbleTextUser : styles.bubbleTextBot]}>
+        <View
+          style={[
+            styles.bubble,
+            isUser ? styles.bubbleUser : styles.bubbleBot,
+          ]}
+        >
+          <Text
+            style={[
+              styles.bubbleText,
+              isUser ? styles.bubbleTextUser : styles.bubbleTextBot,
+            ]}
+          >
             {item.text}
           </Text>
         </View>
-        <Text style={[styles.timeText, isUser ? styles.timeTextUser : styles.timeTextBot]}>
+
+        <Text
+          style={[
+            styles.timeText,
+            isUser ? styles.timeTextUser : styles.timeTextBot,
+          ]}
+        >
           {item.time}
         </Text>
       </View>
@@ -96,13 +141,16 @@ const MessageBubble = ({ item }: { item: Message }) => {
   );
 };
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
-
+/* ─────────────────────────────────────────────────────────────
+   Main Screen
+───────────────────────────────────────────────────────────── */
 export default function SupportChatScreen() {
   const navigation = useNavigation();
+
   const [messages, setMessages] = useState<Message[]>([BOT_GREETING]);
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
+
   const flatListRef = useRef<FlatList>(null);
 
   const sendMessage = async () => {
@@ -111,7 +159,6 @@ export default function SupportChatScreen() {
 
     setIsSending(true);
 
-    // User message
     const userMsg: Message = {
       id: Date.now().toString(),
       text: trimmed,
@@ -119,8 +166,8 @@ export default function SupportChatScreen() {
       time: getTime(),
     };
 
-    // Loading placeholder
     const loadingId = (Date.now() + 1).toString();
+
     const loadingMsg: Message = {
       id: loadingId,
       text: "Typing...",
@@ -131,22 +178,28 @@ export default function SupportChatScreen() {
     setMessages((prev) => [...prev, userMsg, loadingMsg]);
     setInputText("");
 
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
 
-    // Gemini response
-    const botText = await getGeminiResponse(trimmed);
+    const botReply = await getGeminiResponse(trimmed);
 
     const botMsg: Message = {
       id: loadingId,
-      text: botText,
+      text: botReply,
       sender: "bot",
       time: getTime(),
     };
 
-    setMessages((prev) => prev.map((msg) => (msg.id === loadingId ? botMsg : msg)));
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === loadingId ? botMsg : msg))
+    );
+
     setIsSending(false);
 
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
   return (
@@ -155,7 +208,10 @@ export default function SupportChatScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+        >
           <Ionicons name="arrow-back" size={24} color={WHITE} />
         </TouchableOpacity>
 
@@ -163,6 +219,7 @@ export default function SupportChatScreen() {
           <View style={styles.headerAvatarCircle}>
             <Text style={styles.headerAvatarText}>⚡</Text>
           </View>
+
           <View>
             <Text style={styles.headerTitle}>Support Assistant</Text>
             <Text style={styles.headerSubtitle}>Powered by AI</Text>
@@ -181,7 +238,9 @@ export default function SupportChatScreen() {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => <MessageBubble item={item} />}
           contentContainerStyle={styles.listContent}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onContentSizeChange={() =>
+            flatListRef.current?.scrollToEnd({ animated: true })
+          }
         />
 
         {/* Input */}
@@ -198,7 +257,10 @@ export default function SupportChatScreen() {
           />
 
           <TouchableOpacity
-            style={[styles.sendBtn, (!inputText.trim() || isSending) && styles.sendBtnDisabled]}
+            style={[
+              styles.sendBtn,
+              (!inputText.trim() || isSending) && styles.sendBtnDisabled,
+            ]}
             onPress={sendMessage}
             disabled={!inputText.trim() || isSending}
           >
@@ -210,14 +272,15 @@ export default function SupportChatScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const NAVY        = "#0d2137";
-const TEAL        = "#1a8c7a";
+/* ─────────────────────────────────────────────────────────────
+   Styles
+───────────────────────────────────────────────────────────── */
+const NAVY = "#0d2137";
+const TEAL = "#1a8c7a";
 const USER_BUBBLE = "#1a3a52";
-const WHITE       = "#ffffff";
-const LIGHT_BG    = "#f0f4f8";
-const BORDER      = "#dce3eb";
+const WHITE = "#ffffff";
+const LIGHT_BG = "#f0f4f8";
+const BORDER = "#dce3eb";
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: NAVY },
@@ -232,7 +295,10 @@ const styles = StyleSheet.create({
 
   backBtn: { marginRight: 12 },
 
-  headerCenter: { flexDirection: "row", alignItems: "center" },
+  headerCenter: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
 
   headerAvatarCircle: {
     width: 40,
@@ -245,14 +311,24 @@ const styles = StyleSheet.create({
   },
 
   headerAvatarText: { fontSize: 18 },
-  headerTitle:      { color: WHITE, fontSize: 16, fontWeight: "700" },
-  headerSubtitle:   { color: "#7fa8c4", fontSize: 11 },
+  headerTitle: { color: WHITE, fontSize: 16, fontWeight: "700" },
+  headerSubtitle: { color: "#7fa8c4", fontSize: 11 },
 
   listContent: { padding: 14 },
 
-  messageRow:     { flexDirection: "row", marginBottom: 10, alignItems: "flex-end" },
-  messageRowBot:  { justifyContent: "flex-start" },
-  messageRowUser: { justifyContent: "flex-end" },
+  messageRow: {
+    flexDirection: "row",
+    marginBottom: 10,
+    alignItems: "flex-end",
+  },
+
+  messageRowBot: {
+    justifyContent: "flex-start",
+  },
+
+  messageRowUser: {
+    justifyContent: "flex-end",
+  },
 
   avatarCircle: {
     width: 34,
@@ -264,20 +340,50 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
 
-  avatarText:    { fontSize: 16 },
-  bubbleWrapper: { maxWidth: "75%" },
+  avatarText: { fontSize: 16 },
 
-  bubble:     { borderRadius: 16, padding: 12 },
-  bubbleBot:  { backgroundColor: WHITE },
-  bubbleUser: { backgroundColor: USER_BUBBLE },
+  bubbleWrapper: {
+    maxWidth: "75%",
+  },
 
-  bubbleText:     { fontSize: 14 },
-  bubbleTextBot:  { color: "#1c2d3d" },
-  bubbleTextUser: { color: WHITE },
+  bubble: {
+    borderRadius: 16,
+    padding: 12,
+  },
 
-  timeText:     { fontSize: 10, marginTop: 4, color: "#8fa4b5" },
-  timeTextBot:  { textAlign: "left" },
-  timeTextUser: { textAlign: "right" },
+  bubbleBot: {
+    backgroundColor: WHITE,
+  },
+
+  bubbleUser: {
+    backgroundColor: USER_BUBBLE,
+  },
+
+  bubbleText: {
+    fontSize: 14,
+  },
+
+  bubbleTextBot: {
+    color: "#1c2d3d",
+  },
+
+  bubbleTextUser: {
+    color: WHITE,
+  },
+
+  timeText: {
+    fontSize: 10,
+    marginTop: 4,
+    color: "#8fa4b5",
+  },
+
+  timeTextBot: {
+    textAlign: "left",
+  },
+
+  timeTextUser: {
+    textAlign: "right",
+  },
 
   inputBar: {
     flexDirection: "row",
@@ -304,6 +410,12 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
 
-  sendBtnDisabled: { backgroundColor: "#b0bec5" },
-  sendIcon:        { color: WHITE, fontSize: 16 },
+  sendBtnDisabled: {
+    backgroundColor: "#b0bec5",
+  },
+
+  sendIcon: {
+    color: WHITE,
+    fontSize: 16,
+  },
 });

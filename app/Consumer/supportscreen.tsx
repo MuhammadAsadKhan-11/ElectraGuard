@@ -268,7 +268,7 @@ export default function SupportScreen(): React.ReactElement {
           <TouchableOpacity
             style={styles.contactCard}
             onPress={() =>
-              Linking.openURL(`tel:${contact?.helplineNumber || "118"}`)
+              Linking.openURL(`tel:${contact?.helplineNumber || "03258568691"}`)
             }
             activeOpacity={0.8}
           >
@@ -282,7 +282,7 @@ export default function SupportScreen(): React.ReactElement {
               {contact?.helplineSubLabel || "24/7 Expert Support"}
             </Text>
             <Text style={styles.helplineNumber}>
-              {contact?.helplineNumber || "118"}
+              {contact?.helplineNumber || "03258568691"}
             </Text>
           </TouchableOpacity>
         </View>

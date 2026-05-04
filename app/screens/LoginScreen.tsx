@@ -17,7 +17,10 @@ const EMAILJS_SERVICE_ID           = 'service_wynnt38';
 const EMAILJS_PUBLIC_KEY           = 'hMZkNajE1DpuQeOMQ';
 const EMAILJS_PRIVATE_KEY          = 'n5Zknt7IKTmMQdj_C9dDA';
 const EMAILJS_CONSUMER_TEMPLATE_ID = 'template_p7vjo2g';
-const EMAILJS_ADMIN_TEMPLATE_ID    = 'template_kx85hs2g'; // ← Admin ka alag OTP template ho to yahan change karo
+const EMAILJS_ADMIN_TEMPLATE_ID    = 'template_kx85hs2';
+
+// ── 1-week verification window (in milliseconds) ──────────────────────────────
+const VERIFICATION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 // ─── EmailJS sender ────────────────────────────────────────────────────────────
 const sendEmail = async (
@@ -35,7 +38,7 @@ const sendEmail = async (
 
   const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', origin: 'http://localhost' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 
@@ -48,6 +51,14 @@ const sendEmail = async (
 // ─── Generate 6-digit OTP ──────────────────────────────────────────────────────
 const generateOTP = (): string =>
   Math.floor(100000 + Math.random() * 900000).toString();
+
+// ─── Check 1-week verified window ─────────────────────────────────────────────
+const isWithinVerifiedWindow = (docData: Record<string, any>): boolean => {
+  if (!docData.isVerified)     return false;
+  if (!docData.lastVerifiedAt) return false;
+  const elapsed = Date.now() - docData.lastVerifiedAt;
+  return elapsed < VERIFICATION_WINDOW_MS;
+};
 
 export default function LoginScreen() {
   const [activeTab, setActiveTab]       = useState<'Consumer' | 'Admin'>('Consumer');
@@ -77,7 +88,7 @@ export default function LoginScreen() {
       if (activeTab === 'Admin') {
         const adminEmail = emailOrId.trim().toLowerCase();
 
-        // 1. Firebase Auth check
+        // 1. Firebase Auth — sign in to validate password
         let userCredential;
         try {
           userCredential = await signInWithEmailAndPassword(auth, adminEmail, password);
@@ -107,10 +118,23 @@ export default function LoginScreen() {
           return;
         }
 
-        const adminDocId = adminSnap.docs[0].id;
-        await auth.signOut(); // OTP verify hone tak sign out rahega
+        const adminDocId   = adminSnap.docs[0].id;
+        const adminDocData = adminSnap.docs[0].data();
 
-        // 3. OTP generate + Firestore save
+        // ── Check 1-week window ───────────────────────────────────────────────
+        // FIX: Do NOT sign out — keep Firebase Auth session alive so dashboard
+        //      onAuthStateChanged receives a valid user.
+        if (isWithinVerifiedWindow(adminDocData)) {
+          console.log('Admin already verified within 1 week, skipping OTP.');
+          // Auth session is already active (signed in above) → go directly
+          router.replace('/Admin' as any);
+          setLoading(false);
+          return;
+        }
+
+        // 3. Not within window → sign out, then send OTP
+        await auth.signOut();
+
         const otp          = generateOTP();
         const otpExpiresAt = Date.now() + 10 * 60 * 1000;
 
@@ -118,9 +142,10 @@ export default function LoginScreen() {
           loginOtp:          otp,
           loginOtpExpiresAt: otpExpiresAt,
           isVerified:        false,
+          lastVerifiedAt:    null,
         });
 
-        // 4. Email bhejo
+        // 4. Send OTP email
         try {
           await sendEmail(adminEmail, EMAILJS_ADMIN_TEMPLATE_ID, { otp_code: otp });
         } catch (emailError: any) {
@@ -135,7 +160,7 @@ export default function LoginScreen() {
           [{ text: 'OK' }]
         );
 
-        // 5. OTP screen navigate
+        // 5. Navigate to OTP screen
         router.push({
           pathname: '/screens/LoginOTPScreen',
           params: { email: adminEmail, password, role: 'Admin', adminDocId },
@@ -147,8 +172,9 @@ export default function LoginScreen() {
       } else {
         let loginEmail    = emailOrId.trim().toLowerCase();
         let consumerDocId = '';
+        let consumerData: Record<string, any> = {};
 
-        // 1. Consumer ID se email resolve karo (agar @ nahi hai)
+        // 1. Resolve Consumer ID → email if needed
         if (!emailOrId.includes('@')) {
           const idSnap = await getDocs(
             query(collection(db, 'consumers'), where('consumerId', '==', emailOrId.trim()))
@@ -159,9 +185,9 @@ export default function LoginScreen() {
             return;
           }
           loginEmail    = idSnap.docs[0].data().email?.trim().toLowerCase();
-          consumerDocId = idSnap.docs[0].id; // ← pehli query se hi save
+          consumerDocId = idSnap.docs[0].id;
+          consumerData  = idSnap.docs[0].data();
         } else {
-          // Email se login — seedha Firestore check
           const emailSnap = await getDocs(
             query(collection(db, 'consumers'), where('email', '==', loginEmail))
           );
@@ -170,10 +196,11 @@ export default function LoginScreen() {
             setLoading(false);
             return;
           }
-          consumerDocId = emailSnap.docs[0].id; // ← yahan se save
+          consumerDocId = emailSnap.docs[0].id;
+          consumerData  = emailSnap.docs[0].data();
         }
 
-        // 2. Firebase Auth check
+        // 2. Firebase Auth — sign in to validate password
         try {
           await signInWithEmailAndPassword(auth, loginEmail, password);
         } catch (authError: any) {
@@ -190,9 +217,20 @@ export default function LoginScreen() {
           return;
         }
 
-        await auth.signOut(); // OTP verify hone tak sign out
+        // ── Check 1-week window ───────────────────────────────────────────────
+        // FIX: Do NOT sign out — keep Firebase Auth session alive so dashboard
+        //      onAuthStateChanged receives a valid user and doesn't redirect back.
+        if (isWithinVerifiedWindow(consumerData)) {
+          console.log('Consumer already verified within 1 week, skipping OTP.');
+          // Auth session is already active (signed in above) → go directly
+          router.replace('/Consumer' as any);
+          setLoading(false);
+          return;
+        }
 
-        // 3. OTP generate + Firestore save (dobara query nahi — consumerDocId already hai)
+        // 3. Not within window → sign out, then send OTP
+        await auth.signOut();
+
         const otp          = generateOTP();
         const otpExpiresAt = Date.now() + 10 * 60 * 1000;
 
@@ -200,9 +238,10 @@ export default function LoginScreen() {
           loginOtp:          otp,
           loginOtpExpiresAt: otpExpiresAt,
           isVerified:        false,
+          lastVerifiedAt:    null,
         });
 
-        // 4. Email bhejo
+        // 4. Send OTP email
         try {
           await sendEmail(loginEmail, EMAILJS_CONSUMER_TEMPLATE_ID, { otp_code: otp });
         } catch (emailError: any) {
@@ -217,7 +256,7 @@ export default function LoginScreen() {
           [{ text: 'OK' }]
         );
 
-        // 5. OTP screen navigate
+        // 5. Navigate to OTP screen
         router.push({
           pathname: '/screens/LoginOTPScreen',
           params: { email: loginEmail, password, role: 'Consumer', consumerDocId },
@@ -290,7 +329,7 @@ export default function LoginScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* OTP notice — same for both tabs */}
+      {/* OTP notice */}
       <View style={styles.otpNotice}>
         <Ionicons
           name={activeTab === 'Admin' ? 'shield-checkmark-outline' : 'mail-outline'}
@@ -298,7 +337,7 @@ export default function LoginScreen() {
           color="#0B3C5D"
         />
         <Text style={styles.otpNoticeText}>
-          A 6-digit OTP will be sent to your email for verification.
+          A 6-digit OTP will be sent to your email for verification (once per week).
         </Text>
       </View>
 
@@ -360,7 +399,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 13, flexDirection: 'row',
     alignItems: 'center', marginBottom: 8,
   },
-  passwordInput: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 14, color: '#1F2933' },
+  passwordInput:   { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 14, color: '#1F2933' },
   otpNotice: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF',
     borderRadius: 8, padding: 10, width: '100%', marginTop: 8, gap: 6,
