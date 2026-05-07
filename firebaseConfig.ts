@@ -1,7 +1,8 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
+import { getDatabase } from 'firebase/database'; // ← ADD
 import { getFirestore } from 'firebase/firestore';
-// Firebase config
+
 const firebaseConfig = {
   apiKey: "AIzaSyD1F98ESsaDWGkeuqnJ76EuAKdhjYInQME",
   authDomain: "electraguard-43b18.firebaseapp.com",
@@ -13,12 +14,9 @@ const firebaseConfig = {
   measurementId: "G-DQ6D41MHJ5"
 };
 
-
-const app = getApps().length === 0
-  ? initializeApp(firebaseConfig)
-  : getApp();
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-
+export const rtdb = getDatabase(app); // ← ADD
 export default app;

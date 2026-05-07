@@ -12,6 +12,7 @@ export interface Consumer {
   anomaly: number;
   address: string;
   phone: string;
+
   lastReading: string;
   status: 'Active' | 'Inactive';
   consumptionHistory: { date: string; value: number }[];
@@ -25,6 +26,8 @@ export interface Case {
   consumerName: string;
   meterNumber: string;
   status: CaseStatus;
+  priority?: string;   // ← ADD
+  category?: string;
   riskLevel: RiskLevel;
   description: string;
   area: string;
