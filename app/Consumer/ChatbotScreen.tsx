@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 /* ─────────────────────────────────────────────────────────────
    RENDER BACKEND URL
 ───────────────────────────────────────────────────────────── */
-const API_URL = "https://electraguard-backend.onrender.com/chat"; // ✅ /chat route added
+const API_URL = "https://electraguard-backend-1.onrender.com/chat"; // ✅ /chat route added
 
 /* ─────────────────────────────────────────────────────────────
    Backend Chat Function

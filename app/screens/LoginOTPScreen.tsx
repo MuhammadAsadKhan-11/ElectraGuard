@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { Timestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, Image, KeyboardAvoidingView,
@@ -23,7 +23,7 @@ export default function LoginOTPScreen() {
     role:           string;
     consumerDocId?: string;
     adminDocId?:    string;
-    isRegistering?: string; // ← "true" sirf registration flow mein
+    isRegistering?: string;
   }>();
 
   const {
@@ -75,7 +75,7 @@ export default function LoginOTPScreen() {
         loginOtp:          newOtp,
         loginOtpExpiresAt: otpExpiresAt,
         isVerified:        false,
-        lastVerifiedAt:    null, // ← reset karo jab resend karo
+        lastVerifiedAt:    null,
       });
 
       const payload = {
@@ -145,16 +145,18 @@ export default function LoginOTPScreen() {
       // ── OTP sahi hai — Firebase Auth sign in ─────────────────────────────────
       await signInWithEmailAndPassword(auth, email, password);
 
-      // ── Firestore update: verified + 1-week window start ─────────────────────
+      // ── FIX: Server Timestamp use karo — device clock ignore hoga ────────────
+      // Timestamp.now() Firebase server se time leta hai
+      // toMillis() usse milliseconds mein convert karta hai
+      // Isse device ka galat clock matter nahi karta
       await updateDoc(docRef, {
         isVerified:        true,
-        lastVerifiedAt:    Date.now(), // ← 1-week timer yahan se shuru hoga
+        lastVerifiedAt:    Timestamp.now().toMillis(),
         loginOtp:          null,
         loginOtpExpiresAt: null,
       });
 
       // ── Navigate to dashboard ─────────────────────────────────────────────────
-      // isRegistering ho ya normal login — dono mein same dashboard
       router.replace((isAdmin ? '/Admin' : '/Consumer') as any);
 
     } catch (err: any) {

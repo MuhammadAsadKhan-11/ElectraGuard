@@ -52,11 +52,20 @@ const sendEmail = async (
 const generateOTP = (): string =>
   Math.floor(100000 + Math.random() * 900000).toString();
 
-// ─── Check 1-week verified window ─────────────────────────────────────────────
+// ─── FIX 1: Check 1-week verified window (device clock safe) ──────────────────
 const isWithinVerifiedWindow = (docData: Record<string, any>): boolean => {
   if (!docData.isVerified)     return false;
   if (!docData.lastVerifiedAt) return false;
-  const elapsed = Date.now() - docData.lastVerifiedAt;
+
+  const now              = Date.now();
+  const lastVerifiedAt   = docData.lastVerifiedAt;
+
+  // FIX: Agar lastVerifiedAt future mein hai (device clock galat tha)
+  // ya 0 hai → invalid mano, OTP bhejo
+  if (lastVerifiedAt <= 0)              return false;
+  if (lastVerifiedAt > now + 60_000)    return false; // 1 min tolerance
+
+  const elapsed = now - lastVerifiedAt;
   return elapsed < VERIFICATION_WINDOW_MS;
 };
 
@@ -86,7 +95,8 @@ export default function LoginScreen() {
       // ADMIN FLOW
       // ════════════════════════════════════════════════════════════════════════
       if (activeTab === 'Admin') {
-        const adminEmail = emailOrId.trim().toLowerCase();
+        // FIX 2: Admin email as-is rakho, sirf trim karo
+        const adminEmail = emailOrId.trim();
 
         // 1. Firebase Auth — sign in to validate password
         let userCredential;
@@ -95,7 +105,7 @@ export default function LoginScreen() {
         } catch (authError: any) {
           if (
             authError.code === 'auth/invalid-credential' ||
-            authError.code === 'auth/wrong-password' ||
+            authError.code === 'auth/wrong-password'    ||
             authError.code === 'auth/user-not-found'
           ) {
             Alert.alert('Login Failed', 'Invalid email or password.');
@@ -122,11 +132,8 @@ export default function LoginScreen() {
         const adminDocData = adminSnap.docs[0].data();
 
         // ── Check 1-week window ───────────────────────────────────────────────
-        // FIX: Do NOT sign out — keep Firebase Auth session alive so dashboard
-        //      onAuthStateChanged receives a valid user.
         if (isWithinVerifiedWindow(adminDocData)) {
           console.log('Admin already verified within 1 week, skipping OTP.');
-          // Auth session is already active (signed in above) → go directly
           router.replace('/Admin' as any);
           setLoading(false);
           return;
@@ -170,12 +177,14 @@ export default function LoginScreen() {
       // CONSUMER FLOW
       // ════════════════════════════════════════════════════════════════════════
       } else {
-        let loginEmail    = emailOrId.trim().toLowerCase();
+        // FIX 3: Email as-is rakho — sirf trim karo, toLowerCase mat karo
+        let loginEmail    = emailOrId.trim();
         let consumerDocId = '';
         let consumerData: Record<string, any> = {};
 
         // 1. Resolve Consumer ID → email if needed
         if (!emailOrId.includes('@')) {
+          // Consumer ID se login
           const idSnap = await getDocs(
             query(collection(db, 'consumers'), where('consumerId', '==', emailOrId.trim()))
           );
@@ -184,29 +193,51 @@ export default function LoginScreen() {
             setLoading(false);
             return;
           }
-          loginEmail    = idSnap.docs[0].data().email?.trim().toLowerCase();
+          // FIX 4: Firestore se email as-is lo — toLowerCase nahi
+          loginEmail    = idSnap.docs[0].data().email?.trim();
           consumerDocId = idSnap.docs[0].id;
           consumerData  = idSnap.docs[0].data();
+
+          if (!loginEmail) {
+            Alert.alert('Error', 'Consumer email not found. Please contact support.');
+            setLoading(false);
+            return;
+          }
         } else {
-          const emailSnap = await getDocs(
+          // Email se login — case-insensitive Firestore query ke liye
+          // pehle exact match try karo
+          let emailSnap = await getDocs(
             query(collection(db, 'consumers'), where('email', '==', loginEmail))
           );
+
+          // FIX 5: Exact match nahi mila toh lowercase try karo
+          if (emailSnap.empty) {
+            emailSnap = await getDocs(
+              query(collection(db, 'consumers'), where('email', '==', loginEmail.toLowerCase()))
+            );
+          }
+
           if (emailSnap.empty) {
             Alert.alert('Error', 'Consumer record not found.');
             setLoading(false);
             return;
           }
+
           consumerDocId = emailSnap.docs[0].id;
           consumerData  = emailSnap.docs[0].data();
+          // FIX 6: Firebase Auth mein jo email registered hai wahi use karo
+          loginEmail    = consumerData.email?.trim();
         }
 
         // 2. Firebase Auth — sign in to validate password
         try {
           await signInWithEmailAndPassword(auth, loginEmail, password);
         } catch (authError: any) {
+          console.log('Auth error code:', authError.code);
+          console.log('Trying email:', loginEmail);
           if (
             authError.code === 'auth/invalid-credential' ||
-            authError.code === 'auth/wrong-password' ||
+            authError.code === 'auth/wrong-password'    ||
             authError.code === 'auth/user-not-found'
           ) {
             Alert.alert('Login Failed', 'Invalid email or password.');
@@ -218,11 +249,8 @@ export default function LoginScreen() {
         }
 
         // ── Check 1-week window ───────────────────────────────────────────────
-        // FIX: Do NOT sign out — keep Firebase Auth session alive so dashboard
-        //      onAuthStateChanged receives a valid user and doesn't redirect back.
         if (isWithinVerifiedWindow(consumerData)) {
           console.log('Consumer already verified within 1 week, skipping OTP.');
-          // Auth session is already active (signed in above) → go directly
           router.replace('/Consumer' as any);
           setLoading(false);
           return;

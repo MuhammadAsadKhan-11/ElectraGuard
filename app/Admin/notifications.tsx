@@ -1,269 +1,430 @@
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+// AlertsScreen.tsx
+// ─────────────────────────────────────────────────────────────
+// ElectraGuard — System Alerts Screen (TypeScript)
+// Firebase "systemAlerts" collection se data dynamically fetch karta hai
+// ─────────────────────────────────────────────────────────────
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import {
-    collection,
-    doc,
-    onSnapshot,
-    orderBy,
-    query,
-    updateDoc,
-} from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+  collection,
+  onSnapshot,
+  orderBy,
+  query
+} from "firebase/firestore";
+import React, { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from 'react-native';
-import { db } from '../../firebaseConfig';
+  ActivityIndicator,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { db } from "../../firebaseConfig";
 
-const Colors = {
-  primary: '#0B3C5D',
-  accent: '#007AFF',
-  danger: '#FF3B30',
-  warning: '#FF9500',
-  success: '#34C759',
-  bg: '#F2F2F7',
-  white: '#FFFFFF',
-  text: '#1C1C1E',
-  textSecondary: '#8E8E93',
-  border: '#E5E5EA',
-};
+// ─────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────
+type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
-// ── Types ────────────────────────────────────────────────────────────────────
-type NotifType = 'new_case' | 'case_resolved' | 'inspection' | 'other';
+type AlertSeverity = "high" | "medium" | "low" | "info";
 
-interface Notification {
+interface SystemAlert {
   id: string;
-  type: NotifType;
   title: string;
-  body: string;
-  createdAt: number;
-  read: boolean;
+  description: string;
+  severity: AlertSeverity; // "high" | "medium" | "low" | "info"
+  timeLabel: string;       // e.g. "2 mins ago"
+  createdAt: number;       // timestamp for ordering
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-const GROUP_CONFIG: Record<NotifType, { label: string; color: string; icon: string }> = {
-  new_case:      { label: 'New Cases',      color: Colors.danger,  icon: '📋' },
-  case_resolved: { label: 'Cases Resolved', color: Colors.success, icon: '✅' },
-  inspection:    { label: 'Inspections',    color: Colors.warning, icon: '🔍' },
-  other:         { label: 'General',        color: Colors.accent,  icon: '🔔' },
+// ─────────────────────────────────────────────────────────────
+// SEVERITY CONFIG
+// ─────────────────────────────────────────────────────────────
+const SEVERITY_CONFIG: Record<
+  AlertSeverity,
+  {
+    bg: string;
+    border: string;
+    iconBg: string;
+    iconColor: string;
+    icon: IoniconsName;
+  }
+> = {
+  high: {
+    bg: "#FFF5F5",
+    border: "#FECACA",
+    iconBg: "#FEE2E2",
+    iconColor: "#DC2626",
+    icon: "warning-outline",
+  },
+  medium: {
+    bg: "#FFFBEB",
+    border: "#FDE68A",
+    iconBg: "#FEF3C7",
+    iconColor: "#D97706",
+    icon: "alert-circle-outline",
+  },
+  low: {
+    bg: "#F0FFF4",
+    border: "#BBF7D0",
+    iconBg: "#DCFCE7",
+    iconColor: "#16A34A",
+    icon: "information-circle-outline",
+  },
+  info: {
+    bg: "#F0FDFA",
+    border: "#99F6E4",
+    iconBg: "#CCFBF1",
+    iconColor: "#0D9488",
+    icon: "information-circle-outline",
+  },
 };
 
-function timeAgo(ts: number): string {
-  const diff = Math.floor((Date.now() - ts) / 1000);
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
+// ─────────────────────────────────────────────────────────────
+// ALERT CARD COMPONENT
+// ─────────────────────────────────────────────────────────────
+const AlertCard: React.FC<{ alert: SystemAlert }> = ({ alert }) => {
+  const config = SEVERITY_CONFIG[alert.severity] ?? SEVERITY_CONFIG.info;
 
-// ── Notification Card ─────────────────────────────────────────────────────────
-const NotifCard = ({
-  notif,
-  onRead,
-}: {
-  notif: Notification;
-  onRead: (id: string) => void;
-}) => {
-  const cfg = GROUP_CONFIG[notif.type];
   return (
-    <TouchableOpacity
-      style={[styles.notifCard, !notif.read && styles.notifCardUnread]}
-      onPress={() => onRead(notif.id)}
-      activeOpacity={0.75}
+    <View
+      style={[
+        styles.alertCard,
+        {
+          backgroundColor: config.bg,
+          borderColor: config.border,
+        },
+      ]}
     >
-      <View style={[styles.notifIconBox, { backgroundColor: cfg.color + '18' }]}>
-        <Text style={styles.notifEmoji}>{cfg.icon}</Text>
+      {/* Left icon */}
+      <View style={[styles.alertIconBox, { backgroundColor: config.iconBg }]}>
+        <Ionicons name={config.icon} size={18} color={config.iconColor} />
       </View>
-      <View style={styles.notifBody}>
-        <Text style={styles.notifTitle}>{notif.title}</Text>
-        <Text style={styles.notifText} numberOfLines={2}>{notif.body}</Text>
-        <Text style={styles.notifTime}>{timeAgo(notif.createdAt)}</Text>
+
+      {/* Content */}
+      <View style={styles.alertContent}>
+        <Text style={styles.alertTitle} numberOfLines={1}>
+          {alert.title}
+        </Text>
+        <Text style={styles.alertDesc} numberOfLines={2}>
+          {alert.description}
+        </Text>
       </View>
-      {!notif.read && <View style={[styles.unreadDot, { backgroundColor: cfg.color }]} />}
-    </TouchableOpacity>
+
+      {/* Time */}
+      <Text style={styles.alertTime}>{alert.timeLabel}</Text>
+    </View>
   );
 };
 
-// ── Main Screen ───────────────────────────────────────────────────────────────
-export default function NotificationsScreen() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+// ─────────────────────────────────────────────────────────────
+// SEED DATA — Firebase mein pehli baar data dalne ke liye
+// ─────────────────────────────────────────────────────────────
+const SEED_ALERTS: Omit<SystemAlert, "id">[] = [
+  {
+    title: "High Anomaly Detected",
+    description:
+      "Consumer C-10234567 showing 92% anomaly score in Sector G-10",
+    severity: "high",
+    timeLabel: "2 mins ago",
+    createdAt: Date.now() - 2 * 60 * 1000,
+  },
+  {
+    title: "Data Ingestion Delay",
+    description:
+      "Delayed data sync from Area DHA Phase 6 - Last update 45 mins ago",
+    severity: "medium",
+    timeLabel: "15 mins ago",
+    createdAt: Date.now() - 15 * 60 * 1000,
+  },
+  {
+    title: "Multiple Theft Cases",
+    description: "3 new theft cases opened in Gulberg III area today",
+    severity: "high",
+    timeLabel: "1 hour ago",
+    createdAt: Date.now() - 60 * 60 * 1000,
+  },
+  {
+    title: "System Maintenance",
+    description: "Scheduled maintenance on Feb 10, 2026 from 2 AM - 4 AM",
+    severity: "info",
+    timeLabel: "2 hours ago",
+    createdAt: Date.now() - 2 * 60 * 60 * 1000,
+  },
+];
 
-  // ── Firebase realtime listener ──
+async function seedAlertsData() {
+  try {
+    const { doc, setDoc } = await import("firebase/firestore");
+    for (let i = 0; i < SEED_ALERTS.length; i++) {
+      const alert = SEED_ALERTS[i];
+      await setDoc(doc(db, "systemAlerts", `alert_${i + 1}`), alert);
+    }
+    console.log("systemAlerts seeded successfully.");
+  } catch (err) {
+    console.error("Seed error:", err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────────────────────
+export default function AlertsScreen(): React.ReactElement {
+  const [alerts, setAlerts] = useState<SystemAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ── Fetch from Firebase (real-time listener) ──────────────
   useEffect(() => {
+    setError(null);
     const q = query(
-      collection(db, 'adminNotifications'),
-      orderBy('createdAt', 'desc')
+      collection(db, "systemAlerts"),
+      orderBy("createdAt", "desc")
     );
 
-    const unsub = onSnapshot(q, (snap) => {
-      const data: Notification[] = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<Notification, 'id'>),
-      }));
-      setNotifications(data);
-      setLoading(false);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      async (snapshot) => {
+        if (snapshot.empty) {
+          // Seed default data if collection is empty
+          console.log("Seeding systemAlerts...");
+          await seedAlertsData();
+        } else {
+          const data: SystemAlert[] = snapshot.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<SystemAlert, "id">),
+          }));
+          setAlerts(data);
+          setLoading(false);
+          setRefreshing(false);
+        }
+      },
+      (err) => {
+        console.error("Alerts fetch error:", err);
+        setError("Alerts load nahi ho sake.");
+        setLoading(false);
+        setRefreshing(false);
+      }
+    );
 
-    return () => unsub();
+    return () => unsubscribe();
   }, []);
 
-  // ── Mark as read ──
-  const markRead = async (id: string) => {
-    try {
-      await updateDoc(doc(db, 'adminNotifications', id), { read: true });
-    } catch (e) {
-      console.error('markRead error:', e);
-    }
+  const onRefresh = () => {
+    setRefreshing(true);
+    // onSnapshot will auto-update; just reset refreshing after short delay
+    setTimeout(() => setRefreshing(false), 800);
   };
 
-  const markAllRead = async () => {
-    const unread = notifications.filter((n) => !n.read);
-    await Promise.all(unread.map((n) => markRead(n.id)));
-  };
+  // ── Loading State ─────────────────────────────────────────
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#0B3C5D" />
+        <Text style={styles.loadingText}>Loading alerts...</Text>
+      </View>
+    );
+  }
 
-  // ── Group notifications ──
-  const groups = (Object.keys(GROUP_CONFIG) as NotifType[]).reduce<
-    Record<NotifType, Notification[]>
-  >(
-    (acc, key) => {
-      acc[key] = notifications.filter((n) => n.type === key);
-      return acc;
-    },
-    { new_case: [], case_resolved: [], inspection: [], other: [] }
-  );
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  // ── Error State ───────────────────────────────────────────
+  if (error) {
+    return (
+      <View style={styles.centered}>
+        <Ionicons name="wifi-outline" size={48} color="#D1D5DB" />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={() => {
+            setLoading(true);
+            setError(null);
+          }}
+        >
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.primary} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Notifications</Text>
-          {unreadCount > 0 && (
-            <View style={styles.headerBadge}>
-              <Text style={styles.headerBadgeText}>{unreadCount}</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F0F4F8" />
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#0B3C5D"
+          />
+        }
+      >
+        {/* ── Header Card ── */}
+        <View style={styles.headerCard}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={18} color="#0B3C5D" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>System Alerts</Text>
+          <Text style={styles.headerSubtitle}>
+            {alerts.length} active notification{alerts.length !== 1 ? "s" : ""}
+          </Text>
+        </View>
+
+        {/* ── Alerts List ── */}
+        <View style={styles.alertsList}>
+          {alerts.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={48}
+                color="#A3E4D7"
+              />
+              <Text style={styles.emptyTitle}>All Clear!</Text>
+              <Text style={styles.emptySubtitle}>
+                No active alerts at the moment.
+              </Text>
             </View>
+          ) : (
+            alerts.map((alert) => (
+              <AlertCard key={alert.id} alert={alert} />
+            ))
           )}
         </View>
-        {unreadCount > 0 ? (
-          <TouchableOpacity onPress={markAllRead} style={styles.markAllBtn}>
-            <Text style={styles.markAllText}>Mark all read</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 80 }} />
-        )}
-      </View>
 
-      {loading ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading notifications...</Text>
-        </View>
-      ) : notifications.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyEmoji}>🔔</Text>
-          <Text style={styles.emptyTitle}>No notifications yet</Text>
-          <Text style={styles.emptyText}>New cases, inspections and updates will appear here.</Text>
-        </View>
-      ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
-          {(Object.keys(GROUP_CONFIG) as NotifType[]).map((type) => {
-            const group = groups[type];
-            if (group.length === 0) return null;
-            const cfg = GROUP_CONFIG[type];
-            return (
-              <View key={type} style={styles.group}>
-                {/* Group Header */}
-                <View style={styles.groupHeader}>
-                  <View style={[styles.groupDot, { backgroundColor: cfg.color }]} />
-                  <Text style={[styles.groupTitle, { color: cfg.color }]}>{cfg.label}</Text>
-                  <View style={[styles.groupCount, { backgroundColor: cfg.color + '18' }]}>
-                    <Text style={[styles.groupCountText, { color: cfg.color }]}>{group.length}</Text>
-                  </View>
-                </View>
-
-                {/* Cards */}
-                {group.map((notif) => (
-                  <NotifCard key={notif.id} notif={notif} onRead={markRead} />
-                ))}
-              </View>
-            );
-          })}
-        </ScrollView>
-      )}
+        <View style={{ height: 40 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
+  safeArea: { flex: 1, backgroundColor: "#F0F4F8" },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 20 },
+
+  // Center states
+  centered: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F0F4F8",
+    gap: 12,
+  },
+  loadingText: { color: "#718096", fontSize: 14 },
+  errorText: {
+    color: "#718096",
+    fontSize: 14,
+    textAlign: "center",
+    paddingHorizontal: 32,
+  },
+  retryBtn: {
+    backgroundColor: "#0B3C5D",
+    paddingHorizontal: 28,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  retryText: { color: "#fff", fontWeight: "700" },
 
   // Header
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: Colors.white, paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  headerCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 18,
+    marginTop: 40,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  backBtn: { padding: 4, width: 36 },
-  headerCenter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
-  headerBadge: {
-    backgroundColor: Colors.danger, borderRadius: 10,
-    paddingHorizontal: 7, paddingVertical: 2,
+  backBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#EFF6FF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
   },
-  headerBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  markAllBtn: { paddingHorizontal: 4 },
-  markAllText: { fontSize: 13, color: Colors.accent, fontWeight: '600' },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#1A202C",
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: "#9CA3AF",
+  },
 
-  // Loading / Empty
-  loadingBox: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  loadingText: { color: Colors.textSecondary, fontSize: 14 },
-  emptyBox: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  emptyEmoji: { fontSize: 52, marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  // Alerts list
+  alertsList: {
+    gap: 10,
+  },
 
-  // Group
-  group: { marginTop: 20, paddingHorizontal: 16 },
-  groupHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10,
+  // Alert card
+  alertCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
   },
-  groupDot: { width: 8, height: 8, borderRadius: 4 },
-  groupTitle: { fontSize: 13, fontWeight: '700', flex: 1 },
-  groupCount: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
-  groupCountText: { fontSize: 11, fontWeight: '700' },
+  alertIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  alertContent: {
+    flex: 1,
+  },
+  alertTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1A202C",
+    marginBottom: 3,
+  },
+  alertDesc: {
+    fontSize: 11,
+    color: "#6B7280",
+    lineHeight: 16,
+  },
+  alertTime: {
+    fontSize: 10,
+    color: "#9CA3AF",
+    flexShrink: 0,
+    marginTop: 2,
+  },
 
-  // Notification card
-  notifCard: {
-    backgroundColor: Colors.white, borderRadius: 14, padding: 14,
-    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-    marginBottom: 8,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
+  // Empty state
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 60,
+    gap: 10,
   },
-  notifCardUnread: {
-    borderLeftWidth: 3, borderLeftColor: Colors.accent,
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1A202C",
   },
-  notifIconBox: {
-    width: 42, height: 42, borderRadius: 12,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  notifEmoji: { fontSize: 20 },
-  notifBody: { flex: 1 },
-  notifTitle: { fontSize: 14, fontWeight: '600', color: Colors.text, marginBottom: 3 },
-  notifText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
-  notifTime: { fontSize: 11, color: Colors.textSecondary, marginTop: 6 },
-  unreadDot: {
-    width: 8, height: 8, borderRadius: 4, marginTop: 4,
+  emptySubtitle: {
+    fontSize: 13,
+    color: "#9CA3AF",
   },
 });

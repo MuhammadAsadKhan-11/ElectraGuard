@@ -125,12 +125,10 @@ const ArticleCard: React.FC<{ article: KBArticle }> = ({ article }) => (
 // WHATSAPP HELPER
 // ─────────────────────────────────────────────────────────────
 const openWhatsApp = async (phoneNumber: string) => {
-  // Leading 0 hata ke 92 (Pakistan code) add karo
   const cleaned = phoneNumber.replace(/^0/, "");
   const fullNumber = cleaned.startsWith("92") ? cleaned : `92${cleaned}`;
   const message = encodeURIComponent("Hello! I need support.");
 
-  // Pehle native deep link try karo (direct chat open karta hai)
   const whatsappNative = `whatsapp://send?phone=${fullNumber}&text=${message}`;
   const whatsappWeb = `https://wa.me/${fullNumber}?text=${message}`;
 
@@ -138,7 +136,6 @@ const openWhatsApp = async (phoneNumber: string) => {
   if (canOpen) {
     Linking.openURL(whatsappNative);
   } else {
-    // Fallback: browser se open karo
     Linking.openURL(whatsappWeb);
   }
 };
@@ -253,8 +250,8 @@ export default function SupportScreen(): React.ReactElement {
             onPress={() => router.back()}
             activeOpacity={0.7}
           >
+            <Ionicons name="arrow-back" size={18} color="#0B3C5D" />
           </TouchableOpacity>
-          <Ionicons name="arrow-back" size={18} color="#0B3C5D" />
           <Text style={styles.headerTitle}>Help & Support</Text>
           <Text style={styles.headerSubtitle}>
             Get answers to your questions and learn about energy conservation

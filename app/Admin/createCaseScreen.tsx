@@ -2,22 +2,22 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { Colors } from '../../constants/Colors';
 
 // Firebase
 import { ref as dbRef, get, push, set } from 'firebase/database';
 import { rtdb } from '../../firebaseConfig'; // ← rtdb, storage hata diya
-import { sendPushNotification } from '../utils/notifications';
+import { sendPushNotification } from '../../utils/notifications';
 
 interface Props {
   navigation: any;
