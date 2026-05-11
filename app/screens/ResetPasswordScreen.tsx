@@ -47,7 +47,7 @@ export default function ResetPasswordScreen() {
     try {
       const collectionName = isAdmin ? 'admins' : 'consumers';
 
-      // ── Step 1: Firestore se user document dhundo ─────────────────────────────
+      // ── Step 1: Find user document from Firestore ─────────────────────────────
       const q        = query(collection(db, collectionName), where('email', '==', email));
       const snapshot = await getDocs(q);
 
@@ -66,29 +66,29 @@ export default function ResetPasswordScreen() {
         return;
       }
 
-      // ── Step 2: base64 decode karke current password nikalo ───────────────────
+      // ── Step 2: base64 decode to extract current password ───────────────────
       const currentPassword = Buffer.from(passwordEncoded, 'base64').toString('utf8');
 
-      // ── Step 3: Current password se silently Firebase Auth sign in karo ───────
+      // ── Step 3: Silently sign in to Firebase Auth with current password ───────
       const userCredential = await signInWithEmailAndPassword(auth, email, currentPassword);
 
-      // ── Step 4: Firebase Auth mein new password update karo ───────────────────
+      // ── Step 4: Update new password in Firebase Auth ──────────────────────────
       await updatePassword(userCredential.user, newPassword);
 
-      // ── Step 5: Naye password ka hash aur encoded version banao ──────────────
+      // ── Step 5: Create hash and encoded version of the new password ───────────
       const newPasswordHash = await Crypto.digestStringAsync(
         Crypto.CryptoDigestAlgorithm.SHA256,
         newPassword
       );
       const newPasswordEncoded = Buffer.from(newPassword).toString('base64');
 
-      // ── Step 6: Firestore mein update karo ───────────────────────────────────
+      // ── Step 6: Update in Firestore ───────────────────────────────────────────
       await updateDoc(doc(db, collectionName, userDoc.id), {
         passwordHash:    newPasswordHash,
         passwordEncoded: newPasswordEncoded,
       });
 
-      // ── Step 7: Sign out — user fresh login karega ────────────────────────────
+      // ── Step 7: Sign out — user will do a fresh login ─────────────────────────
       await auth.signOut();
 
       Alert.alert(

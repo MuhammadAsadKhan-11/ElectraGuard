@@ -81,7 +81,7 @@ export default function ReportScreen() {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) return;
       try {
-        // ✅ uid se seedha document lo — email search ki zaroorat nahi
+        // ✅ Fetch document directly by uid — no need to search by email
         const snap = await getDoc(doc(db, 'consumers', user.uid));
         if (snap.exists()) {
           const data = snap.data() as ConsumerData;
@@ -188,7 +188,7 @@ export default function ReportScreen() {
 
       await addDoc(collection(db, 'cases'), {
         caseId:            referenceId,
-        // ✅ Jo name consumer ne register karte waqt likha tha — wahi aayega
+        // ✅ Uses the name the consumer entered at registration
         consumerId:        consumer.consumerId,
         consumerName:      consumer.fullName,
         consumerEmail:     consumer.email,
@@ -257,7 +257,7 @@ export default function ReportScreen() {
           <Text style={styles.heroSub}>
             Submit meter issues, billing concerns, or unusual activity
           </Text>
-          {/* ✅ Logged-in consumer ka naam show karo */}
+          {/* ✅ Show the logged-in consumer's name */}
           {consumer && (
             <View style={styles.consumerBadge}>
               <Ionicons name="person-circle-outline" size={16} color="#93C5FD" />

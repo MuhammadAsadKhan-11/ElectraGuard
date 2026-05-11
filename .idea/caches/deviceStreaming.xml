@@ -4,18 +4,6 @@
     <option name="deviceSelectionList">
       <list>
         <PersistentDeviceSelectionData>
-          <option name="api" value="36" />
-          <option name="brand" value="samsung" />
-          <option name="codename" value="dm1qcsx" />
-          <option name="id" value="dm1qcsx" />
-          <option name="labId" value="google" />
-          <option name="manufacturer" value="Samsung" />
-          <option name="name" value="Galaxy S23" />
-          <option name="screenDensity" value="480" />
-          <option name="screenX" value="1080" />
-          <option name="screenY" value="2340" />
-        </PersistentDeviceSelectionData>
-        <PersistentDeviceSelectionData>
           <option name="api" value="34" />
           <option name="brand" value="Sony" />
           <option name="codename" value="A402SO" />
@@ -694,6 +682,18 @@
           <option name="brand" value="samsung" />
           <option name="codename" value="dm1q-SM-S911U" />
           <option name="id" value="dm1q-SM-S911U" />
+          <option name="labId" value="google" />
+          <option name="manufacturer" value="Samsung" />
+          <option name="name" value="Galaxy S23" />
+          <option name="screenDensity" value="480" />
+          <option name="screenX" value="1080" />
+          <option name="screenY" value="2340" />
+        </PersistentDeviceSelectionData>
+        <PersistentDeviceSelectionData>
+          <option name="api" value="36" />
+          <option name="brand" value="samsung" />
+          <option name="codename" value="dm1qcsx" />
+          <option name="id" value="dm1qcsx" />
           <option name="labId" value="google" />
           <option name="manufacturer" value="Samsung" />
           <option name="name" value="Galaxy S23" />
@@ -1438,6 +1438,18 @@
           <option name="screenDensity" value="420" />
           <option name="screenX" value="1856" />
           <option name="screenY" value="2160" />
+        </PersistentDeviceSelectionData>
+        <PersistentDeviceSelectionData>
+          <option name="api" value="36" />
+          <option name="brand" value="samsung" />
+          <option name="codename" value="q7mq" />
+          <option name="id" value="q7mq" />
+          <option name="labId" value="google" />
+          <option name="manufacturer" value="Samsung" />
+          <option name="name" value="Galaxy Z TriFold" />
+          <option name="screenDensity" value="320" />
+          <option name="screenX" value="2160" />
+          <option name="screenY" value="1584" />
         </PersistentDeviceSelectionData>
         <PersistentDeviceSelectionData>
           <option name="api" value="36" />

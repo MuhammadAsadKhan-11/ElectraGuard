@@ -60,8 +60,8 @@ const isWithinVerifiedWindow = (docData: Record<string, any>): boolean => {
   const now              = Date.now();
   const lastVerifiedAt   = docData.lastVerifiedAt;
 
-  // FIX: Agar lastVerifiedAt future mein hai (device clock galat tha)
-  // ya 0 hai → invalid mano, OTP bhejo
+  
+  // If it's 0 → consider it invalid, send OTP
   if (lastVerifiedAt <= 0)              return false;
   if (lastVerifiedAt > now + 60_000)    return false; // 1 min tolerance
 
@@ -95,7 +95,7 @@ export default function LoginScreen() {
       // ADMIN FLOW
       // ════════════════════════════════════════════════════════════════════════
       if (activeTab === 'Admin') {
-        // FIX 2: Admin email as-is rakho, sirf trim karo
+        // FIX 2: Keep admin email as-is, just trim it
         const adminEmail = emailOrId.trim();
 
         // 1. Firebase Auth — sign in to validate password
@@ -177,14 +177,14 @@ export default function LoginScreen() {
       // CONSUMER FLOW
       // ════════════════════════════════════════════════════════════════════════
       } else {
-        // FIX 3: Email as-is rakho — sirf trim karo, toLowerCase mat karo
+        // FIX 3: Keep email as-is — just trim it, don't convert to lowercase
         let loginEmail    = emailOrId.trim();
         let consumerDocId = '';
         let consumerData: Record<string, any> = {};
 
         // 1. Resolve Consumer ID → email if needed
         if (!emailOrId.includes('@')) {
-          // Consumer ID se login
+          //login as consumer id
           const idSnap = await getDocs(
             query(collection(db, 'consumers'), where('consumerId', '==', emailOrId.trim()))
           );
@@ -193,7 +193,7 @@ export default function LoginScreen() {
             setLoading(false);
             return;
           }
-          // FIX 4: Firestore se email as-is lo — toLowerCase nahi
+          // FIX 4: Take email from Firestore as-is — don't convert to lowercase
           loginEmail    = idSnap.docs[0].data().email?.trim();
           consumerDocId = idSnap.docs[0].id;
           consumerData  = idSnap.docs[0].data();
@@ -204,13 +204,12 @@ export default function LoginScreen() {
             return;
           }
         } else {
-          // Email se login — case-insensitive Firestore query ke liye
-          // pehle exact match try karo
+          //ogin with email — for case-insensitive Firestore query, first try exact match
           let emailSnap = await getDocs(
             query(collection(db, 'consumers'), where('email', '==', loginEmail))
           );
 
-          // FIX 5: Exact match nahi mila toh lowercase try karo
+          // FIX 5: If exact match not found, then try lowercase match (for legacy data that may be inconsistent)
           if (emailSnap.empty) {
             emailSnap = await getDocs(
               query(collection(db, 'consumers'), where('email', '==', loginEmail.toLowerCase()))
@@ -225,7 +224,7 @@ export default function LoginScreen() {
 
           consumerDocId = emailSnap.docs[0].id;
           consumerData  = emailSnap.docs[0].data();
-          // FIX 6: Firebase Auth mein jo email registered hai wahi use karo
+          //FIX 6: Use the exact email that is registered in Firebase Auth
           loginEmail    = consumerData.email?.trim();
         }
 

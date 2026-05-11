@@ -1,8 +1,8 @@
 // LearnScreen.tsx
 // ─────────────────────────────────────────────────────────────
 // ElectraGuard — Learn Screen (TypeScript)
-// Firebase "learnContent" collection se sara data fetch karta hai
-// Pehli launch par auto-seed bhi karta hai
+// Fetches all data from Firebase "learnContent" collection
+// Also auto-seeds on first launch or if data is missing
 // ─────────────────────────────────────────────────────────────
 import { Ionicons } from "@expo/vector-icons";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";

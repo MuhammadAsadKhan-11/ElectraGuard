@@ -52,7 +52,7 @@ export default function AdminLayout() {
         headerShown: false,
         tabBarStyle: styles.tabBar,
         tabBarShowLabel: false,
-        tabBarIconStyle: styles.tabBarIconStyle, // ← yeh add karo
+        tabBarIconStyle: styles.tabBarIconStyle,
       }}
     >
       <Tabs.Screen
@@ -95,11 +95,6 @@ export default function AdminLayout() {
           ),
         }}
       />
-
-      <Tabs.Screen name="notifications"         options={{ href: null }} />
-      <Tabs.Screen name="CaseProfileScreen"     options={{ href: null }} />
-      <Tabs.Screen name="ConsumerProfileScreen" options={{ href: null }} />
-      <Tabs.Screen name="DashboardScreen"       options={{ href: null }} />
     </Tabs>
   );
 }
@@ -118,25 +113,25 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   tabBarIconStyle: {
-    height: 60,       // tab bar ki full height use karo
+    height: 60,
     marginTop: 0,
   },
   tabIconWrap: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',  // icon + label ko vertically center karo
+    justifyContent: 'center',
     gap: 4,
   },
   tabImage: {
     width: 24,
-    height: 24,       // fixed height, marginTop hata diya
+    height: 24,
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: Colors.textSecondary,
     fontWeight: '600',
     textAlign: 'center',
-    width: 65,        // "Dashboard" k liye enough width
+    width: 70,
   },
   tabLabelActive: {
     color: Colors.primary,

@@ -1,7 +1,7 @@
 // SupportScreen.tsx
 // ─────────────────────────────────────────────────────────────
 // ElectraGuard — Support Screen (TypeScript)
-// Firebase "supportContent" se data fetch karta hai
+// Fetches data from Firebase "supportContent" collection
 // ─────────────────────────────────────────────────────────────
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -174,7 +174,7 @@ export default function SupportScreen(): React.ReactElement {
       }
     } catch (err) {
       console.error("Support fetch error:", err);
-      setError("Data load nahi ho saka.");
+      setError("Failed to load data.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -260,7 +260,7 @@ export default function SupportScreen(): React.ReactElement {
 
         {/* ── Contact Options ── */}
         <View style={styles.contactRow}>
-          {/* ── Live Chat → WhatsApp redirect ── */}
+          {/* ── Live Chat → redirects to WhatsApp ── */}
           <TouchableOpacity
             style={styles.contactCard}
             onPress={() =>

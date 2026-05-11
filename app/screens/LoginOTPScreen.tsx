@@ -142,13 +142,13 @@ export default function LoginOTPScreen() {
         return;
       }
 
-      // ── OTP sahi hai — Firebase Auth sign in ─────────────────────────────────
+      // ── OTP is valid — Firebase Auth sign in ─────────────────────────────────
       await signInWithEmailAndPassword(auth, email, password);
 
-      // ── FIX: Server Timestamp use karo — device clock ignore hoga ────────────
-      // Timestamp.now() Firebase server se time leta hai
-      // toMillis() usse milliseconds mein convert karta hai
-      // Isse device ka galat clock matter nahi karta
+      // ── FIX: Use Server Timestamp — device clock will be ignored ────────────
+      // Timestamp.now() gets time from Firebase server
+      // toMillis() converts it to milliseconds
+      // This way, incorrect device clock doesn't matter
       await updateDoc(docRef, {
         isVerified:        true,
         lastVerifiedAt:    Timestamp.now().toMillis(),
