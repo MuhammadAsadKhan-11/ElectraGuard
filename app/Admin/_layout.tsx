@@ -55,6 +55,7 @@ export default function AdminLayout() {
         tabBarIconStyle: styles.tabBarIconStyle,
       }}
     >
+      {/* ✅ Sirf yeh 5 tabs show honge */}
       <Tabs.Screen
         name="index"
         options={{
@@ -95,6 +96,13 @@ export default function AdminLayout() {
           ),
         }}
       />
+
+      {/* 🚫 Yeh sab hide hain — tabs mein nazar nahi aayenge */}
+      <Tabs.Screen name="CaseProfileScreen" options={{ href: null }} />
+      <Tabs.Screen name="ConsumerProfileScreen" options={{ href: null }} />
+      <Tabs.Screen name="createCaseScreen" options={{ href: null }} />
+      <Tabs.Screen name="escalate" options={{ href: null }} />
+      <Tabs.Screen name="notifications" options={{ href: null }} />
     </Tabs>
   );
 }
