@@ -21,44 +21,15 @@ import {
 } from "react-native";
 import { db } from "../../firebaseConfig";
 import { seedSupportData } from "../../seedsupport";
+import { ContactInfo, FAQItem, KBArticle, SupportData } from "../../types/support.types"; // ← imported
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────
+// ✅ FAQItem, KBArticle, ContactInfo, SupportData are now imported
+//    from types/support.types.ts
+
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
-
-interface FAQItem {
-  id: string;
-  icon: string;
-  question: string;
-  answer: string;
-}
-
-interface KBArticle {
-  id: string;
-  label: string;
-  url: string;
-  category: string;
-  icon: string;
-}
-
-interface ContactInfo {
-  helplineNumber: string;
-  helplineLabel: string;
-  helplineSubLabel: string;
-  liveChatLabel: string;
-  liveChatSubLabel: string;
-  liveChatStatus: string;
-  knowledgeBaseLabel: string;
-  knowledgeBaseSubLabel: string;
-  knowledgeBaseCount: string;
-}
-
-interface SupportData {
-  faqs: FAQItem[];
-  articles: KBArticle[];
-  contact: ContactInfo | null;
-}
 
 // ─────────────────────────────────────────────────────────────
 // FAQ ITEM COMPONENT

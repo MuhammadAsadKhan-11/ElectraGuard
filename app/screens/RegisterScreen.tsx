@@ -1,6 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Buffer } from 'buffer';
-import * as Crypto from 'expo-crypto';
 import { router } from 'expo-router';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { collection, doc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
@@ -17,23 +15,20 @@ const EMAILJS_PUBLIC_KEY           = 'hMZkNajE1DpuQeOMQ';
 const EMAILJS_PRIVATE_KEY          = 'n5Zknt7IKTmMQdj_C9dDA';
 const EMAILJS_CONSUMER_TEMPLATE_ID = 'template_p7vjo2g';
 
-// ── Generate 6-digit OTP ───────────────────────────────────────────────────────
 const generateOTP = (): string =>
   Math.floor(100000 + Math.random() * 900000).toString();
 
-// ── Send OTP via EmailJS ───────────────────────────────────────────────────────
 const sendOTPEmail = async (toEmail: string, otp: string): Promise<void> => {
-  const payload = {
-    service_id:      EMAILJS_SERVICE_ID,
-    template_id:     EMAILJS_CONSUMER_TEMPLATE_ID,
-    user_id:         EMAILJS_PUBLIC_KEY,
-    accessToken:     EMAILJS_PRIVATE_KEY,
-    template_params: { to_email: toEmail, otp_code: otp },
-  };
   const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload),
+    body: JSON.stringify({
+      service_id:      EMAILJS_SERVICE_ID,
+      template_id:     EMAILJS_CONSUMER_TEMPLATE_ID,
+      user_id:         EMAILJS_PUBLIC_KEY,
+      accessToken:     EMAILJS_PRIVATE_KEY,
+      template_params: { to_email: toEmail, otp_code: otp },
+    }),
   });
   if (!response.ok) {
     const txt = await response.text();
@@ -46,10 +41,10 @@ export default function RegisterScreen() {
     fullName: '', consumerId: '', cnicNumber: '',
     email: '', mobileNumber: '', password: '', confirmPassword: '',
   });
-  const [showPassword, setShowPassword]           = useState(false);
+  const [showPassword, setShowPassword]               = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [agreed, setAgreed]                       = useState(false);
-  const [loading, setLoading]                     = useState(false);
+  const [agreed, setAgreed]                           = useState(false);
+  const [loading, setLoading]                         = useState(false);
 
   const updateField = (key: string, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -68,21 +63,18 @@ export default function RegisterScreen() {
   const handleRegister = async () => {
     if (!validateForm()) return;
     setLoading(true);
-
     try {
       // ── Step 1: Duplicate email check ─────────────────────────────────────────
       const emailSnap = await getDocs(
         query(collection(db, 'consumers'), where('email', '==', form.email))
       );
-
       if (!emailSnap.empty) {
         const existingDoc = emailSnap.docs[0].data();
         const allMatch =
-          existingDoc.fullName    === form.fullName &&
-          existingDoc.consumerId  === form.consumerId &&
-          existingDoc.cnicNumber  === form.cnicNumber &&
+          existingDoc.fullName     === form.fullName &&
+          existingDoc.consumerId   === form.consumerId &&
+          existingDoc.cnicNumber   === form.cnicNumber &&
           existingDoc.mobileNumber === form.mobileNumber;
-
         Alert.alert(
           allMatch ? 'Account Already Exists' : 'Email Already In Use',
           allMatch
@@ -103,36 +95,29 @@ export default function RegisterScreen() {
       const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
       const user           = userCredential.user;
 
-      // ── Step 3: Encrypt password ──────────────────────────────────────────────
-      const passwordHash    = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256, form.password
-      );
-      const passwordEncoded = Buffer.from(form.password).toString('base64');
-
-      // ── Step 4: Generate OTP ──────────────────────────────────────────────────
+      // ── Step 3: Generate OTP ──────────────────────────────────────────────────
       const otp          = generateOTP();
-      const otpExpiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+      const otpExpiresAt = Date.now() + 10 * 60 * 1000;
 
-      // ── Step 5: Save consumer to Firestore (unverified) ───────────────────────
-      // isVerified = false, lastVerifiedAt = null until OTP confirmed
+      // ── Step 4: Save consumer to Firestore ────────────────────────────────────
+      // FIX: Never store passwords or base64-encoded passwords in Firestore.
+      // Firebase Auth handles password storage securely.
       await setDoc(doc(db, 'consumers', user.uid), {
-        uid:            user.uid,
-        fullName:       form.fullName,
-        consumerId:     form.consumerId,
-        cnicNumber:     form.cnicNumber,
-        email:          form.email,
-        mobileNumber:   form.mobileNumber,
-        role:           'consumer',
-        isVerified:     false,
-        lastVerifiedAt: null,
+        uid:               user.uid,
+        fullName:          form.fullName,
+        consumerId:        form.consumerId,
+        cnicNumber:        form.cnicNumber,
+        email:             form.email,
+        mobileNumber:      form.mobileNumber,
+        role:              'consumer',
+        isVerified:        false,
+        lastVerifiedAt:    null,
         loginOtp:          otp,
         loginOtpExpiresAt: otpExpiresAt,
-        passwordHash,
-        passwordEncoded,
-        createdAt: serverTimestamp(),
+        createdAt:         serverTimestamp(),
       });
 
-      // ── Step 6: Send OTP email ────────────────────────────────────────────────
+      // ── Step 5: Send OTP email ────────────────────────────────────────────────
       try {
         await sendOTPEmail(form.email, otp);
       } catch (emailErr: any) {
@@ -141,14 +126,9 @@ export default function RegisterScreen() {
         return;
       }
 
-      Alert.alert(
-        'OTP Sent',
-        `A 6-digit verification code has been sent to ${form.email}. It expires in 10 minutes.`,
-        [{ text: 'OK' }]
-      );
+      Alert.alert('OTP Sent', `A 6-digit code has been sent to ${form.email}. Expires in 10 minutes.`, [{ text: 'OK' }]);
 
-      // ── Step 7: Go to OTP screen (role = Consumer, registering = true) ────────
-      // After OTP verified → isVerified:true, lastVerifiedAt:Date.now() → dashboard
+      // ── Step 6: Navigate to OTP screen ───────────────────────────────────────
       router.push({
         pathname: '/screens/LoginOTPScreen',
         params: {
@@ -156,19 +136,16 @@ export default function RegisterScreen() {
           password:      form.password,
           role:          'Consumer',
           consumerDocId: user.uid,
-          isRegistering: 'true',   // ← flag so OTP screen goes to dashboard after verify
+          isRegistering: 'true',
         },
       });
-
     } catch (error: any) {
       switch (error.code) {
         case 'auth/email-already-in-use':
-          Alert.alert('Email Already In Use', 'This email is already linked to an account.',
-            [
-              { text: 'Go to Login', onPress: () => router.replace('/screens/LoginScreen') },
-              { text: 'Cancel', style: 'cancel' },
-            ]
-          );
+          Alert.alert('Email Already In Use', 'This email is already linked to an account.', [
+            { text: 'Go to Login', onPress: () => router.replace('/screens/LoginScreen') },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
           break;
         case 'auth/invalid-email':
           Alert.alert('Invalid Email', 'Please enter a valid email address.');
@@ -177,7 +154,7 @@ export default function RegisterScreen() {
           Alert.alert('Weak Password', 'Password must be at least 6 characters.');
           break;
         case 'auth/network-request-failed':
-          Alert.alert('Network Error', 'Please check your internet connection and try again.');
+          Alert.alert('Network Error', 'Please check your internet connection.');
           break;
         default:
           Alert.alert('Registration Failed', error.message || 'Something went wrong.');
@@ -188,17 +165,16 @@ export default function RegisterScreen() {
   };
 
   const fields = [
-    { key: 'fullName',     placeholder: 'Enter your full name',       keyboard: 'default' },
-    { key: 'consumerId',   placeholder: 'Enter your Consumer ID',     keyboard: 'default' },
-    { key: 'cnicNumber',   placeholder: '12345-1234567-1',            keyboard: 'numeric' },
-    { key: 'email',        placeholder: 'Enter your email address',   keyboard: 'email-address' },
-    { key: 'mobileNumber', placeholder: '+92 300 1234567',            keyboard: 'phone-pad' },
+    { key: 'fullName',     placeholder: 'Enter your full name',     keyboard: 'default' },
+    { key: 'consumerId',   placeholder: 'Enter your Consumer ID',   keyboard: 'default' },
+    { key: 'cnicNumber',   placeholder: '12345-1234567-1',          keyboard: 'numeric' },
+    { key: 'email',        placeholder: 'Enter your email address', keyboard: 'email-address' },
+    { key: 'mobileNumber', placeholder: '+92 300 1234567',          keyboard: 'phone-pad' },
   ];
 
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
       <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>Create Account</Text>
       <Text style={styles.subtitle}>Join our secure utility analytics platform</Text>
@@ -231,11 +207,7 @@ export default function RegisterScreen() {
               secureTextEntry={!show}
             />
             <TouchableOpacity onPress={() => setShow(!show)}>
-              <Ionicons
-                name={show ? 'eye-off-outline' : 'eye-outline'}
-                size={20}
-                color="#6B7280"
-              />
+              <Ionicons name={show ? 'eye-off-outline' : 'eye-outline'} size={20} color="#6B7280" />
             </TouchableOpacity>
           </View>
         )
@@ -246,58 +218,34 @@ export default function RegisterScreen() {
           {agreed && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
         </View>
         <Text style={styles.checkboxLabel}>
-          I agree to the{' '}
-          <Text style={styles.linkText}>Terms & Conditions</Text>
-          {' '}and{' '}
-          <Text style={styles.linkText}>Privacy Policy</Text>
+          I agree to the <Text style={styles.linkText}>Terms & Conditions</Text> and <Text style={styles.linkText}>Privacy Policy</Text>
         </Text>
       </TouchableOpacity>
 
       <View style={styles.securityNotice}>
         <Ionicons name="shield-checkmark-outline" size={14} color="#059669" />
-        <Text style={styles.securityText}>
-          Your data is protected with end-to-end encryption
-        </Text>
+        <Text style={styles.securityText}>Your data is protected with end-to-end encryption</Text>
       </View>
 
       <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
-        {loading
-          ? <ActivityIndicator color="#FFFFFF" />
-          : <Text style={styles.buttonText}>Create Account</Text>
-        }
+        {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Create Account</Text>}
       </TouchableOpacity>
 
       <Text style={styles.loginText}>
         Already have an account?{' '}
-        <Text style={styles.loginLink} onPress={() => router.push('/screens/LoginScreen')}>
-          Login
-        </Text>
+        <Text style={styles.loginLink} onPress={() => router.push('/screens/LoginScreen')}>Login</Text>
       </Text>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 28,
-    paddingTop: 50, paddingBottom: 40, alignItems: 'center',
-  },
-  logo:     { width: 72, height: 72, marginBottom: 14 },
-  title:    { fontFamily: 'Poppins_700Bold', fontSize: 22, color: '#1F2933', marginBottom: 6 },
-  subtitle: {
-    fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280',
-    marginBottom: 24, textAlign: 'center',
-  },
-  input: {
-    width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.1)', borderRadius: 8,
-    paddingHorizontal: 16, paddingVertical: 13, fontFamily: 'Inter_400Regular',
-    fontSize: 14, color: '#1F2933', marginBottom: 14,
-  },
-  passwordContainer: {
-    width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.1)', borderRadius: 8,
-    paddingHorizontal: 16, paddingVertical: 13, flexDirection: 'row',
-    alignItems: 'center', marginBottom: 14,
-  },
+  container:       { flexGrow: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 28, paddingTop: 50, paddingBottom: 40, alignItems: 'center' },
+  logo:            { width: 72, height: 72, marginBottom: 14 },
+  title:           { fontFamily: 'Poppins_700Bold', fontSize: 22, color: '#1F2933', marginBottom: 6 },
+  subtitle:        { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280', marginBottom: 24, textAlign: 'center' },
+  input:           { width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.1)', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 13, fontFamily: 'Inter_400Regular', fontSize: 14, color: '#1F2933', marginBottom: 14 },
+  passwordContainer: { width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.1)', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   passwordInput:   { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 14, color: '#1F2933' },
   checkboxRow:     { flexDirection: 'row', alignItems: 'flex-start', width: '100%', marginBottom: 12, gap: 10 },
   checkbox:        { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: '#0B3C5D', alignItems: 'center', justifyContent: 'center', marginTop: 2 },

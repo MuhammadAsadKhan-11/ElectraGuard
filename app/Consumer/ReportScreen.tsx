@@ -26,27 +26,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { auth, db } from '../../firebaseConfig'; // ← adjust path if needed
+import { auth, db } from '../../firebaseConfig';
+import { IssueType, ReportDisplayItem } from '../../types/report.types'; // ← imported
 
 // ─── Types ────────────────────────────────────────────────────────
-interface IssueType {
-  id: string;
-  label: string;
-  value: string;
-}
-
-interface Report {
-  id: string;
-  referenceId: string;
-  issueType: string;
-  description: string;
-  meterLocation: string;
-  urgencyLevel: 'Low' | 'Medium' | 'High';
-  status: string;
-  resolution?: string;
-  createdAt: Date;
-  imageUrl?: string;
-}
+// ✅ IssueType and ReportDisplayItem are now imported from types/report.types.ts
 
 // ✅ fullName matches exactly what RegisterScreen saves
 interface ConsumerData {
@@ -61,7 +45,7 @@ interface ConsumerData {
 export default function ReportScreen() {
   const [consumer, setConsumer]               = useState<ConsumerData | null>(null);
   const [issueTypes, setIssueTypes]           = useState<IssueType[]>([]);
-  const [previousReports, setPreviousReports] = useState<Report[]>([]);
+  const [previousReports, setPreviousReports] = useState<ReportDisplayItem[]>([]);
 
   // Form state
   const [selectedIssue, setSelectedIssue]     = useState<IssueType | null>(null);
@@ -123,7 +107,7 @@ export default function ReportScreen() {
         orderBy('createdAt', 'desc')
       );
       const snap = await getDocs(q);
-      const reports: Report[] = snap.docs.map(d => ({
+      const reports: ReportDisplayItem[] = snap.docs.map(d => ({
         id:            d.id,
         referenceId:   d.data().caseId,
         issueType:     d.data().issueType,

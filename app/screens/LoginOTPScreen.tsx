@@ -63,7 +63,7 @@ export default function LoginOTPScreen() {
     }, 1000);
   };
 
-  // ─── Resend OTP ──────────────────────────────────────────────────────────────
+  // ── Resend OTP ───────────────────────────────────────────────────────────────
   const handleResendOTP = async () => {
     if (countdown > 0) return;
     setResendLoading(true);
@@ -78,18 +78,16 @@ export default function LoginOTPScreen() {
         lastVerifiedAt:    null,
       });
 
-      const payload = {
-        service_id:      EMAILJS_SERVICE_ID,
-        template_id:     templateId,
-        user_id:         EMAILJS_PUBLIC_KEY,
-        accessToken:     EMAILJS_PRIVATE_KEY,
-        template_params: { to_email: email, otp_code: newOtp },
-      };
-
       const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(payload),
+        body: JSON.stringify({
+          service_id:      EMAILJS_SERVICE_ID,
+          template_id:     templateId,
+          user_id:         EMAILJS_PUBLIC_KEY,
+          accessToken:     EMAILJS_PRIVATE_KEY,
+          template_params: { to_email: email, otp_code: newOtp },
+        }),
       });
 
       if (!response.ok) {
@@ -106,49 +104,40 @@ export default function LoginOTPScreen() {
     }
   };
 
-  // ─── Verify OTP & Login ──────────────────────────────────────────────────────
+  // ── Verify OTP & Login ───────────────────────────────────────────────────────
   const handleVerify = async () => {
     if (!otp || otp.length !== 6) {
       Alert.alert('Error', 'Please enter the 6-digit OTP.');
       return;
     }
     setLoading(true);
-
     try {
       const docRef  = doc(db, firestoreCol, docId);
       const docSnap = await getDoc(docRef);
 
       if (!docSnap.exists()) {
         Alert.alert('Error', `${isAdmin ? 'Admin' : 'Consumer'} record not found.`);
-        setLoading(false);
-        return;
+        setLoading(false); return;
       }
 
       const data      = docSnap.data();
       const storedOtp = data?.loginOtp as string;
       const expiresAt = data?.loginOtpExpiresAt as number;
 
-      // ── Expiry check ─────────────────────────────────────────────────────────
       if (Date.now() > expiresAt) {
         Alert.alert('OTP Expired', 'Your OTP has expired. Please request a new one.');
-        setLoading(false);
-        return;
+        setLoading(false); return;
       }
 
-      // ── Match check ──────────────────────────────────────────────────────────
       if (otp.trim() !== storedOtp) {
         Alert.alert('Invalid OTP', 'The OTP you entered is incorrect.');
-        setLoading(false);
-        return;
+        setLoading(false); return;
       }
 
-      // ── OTP is valid — Firebase Auth sign in ─────────────────────────────────
+      // OTP valid — sign in with Firebase Auth
       await signInWithEmailAndPassword(auth, email, password);
 
-      // ── FIX: Use Server Timestamp — device clock will be ignored ────────────
-      // Timestamp.now() gets time from Firebase server
-      // toMillis() converts it to milliseconds
-      // This way, incorrect device clock doesn't matter
+      // Update Firestore: mark verified, clear OTP
       await updateDoc(docRef, {
         isVerified:        true,
         lastVerifiedAt:    Timestamp.now().toMillis(),
@@ -156,7 +145,6 @@ export default function LoginOTPScreen() {
         loginOtpExpiresAt: null,
       });
 
-      // ── Navigate to dashboard ─────────────────────────────────────────────────
       router.replace((isAdmin ? '/Admin' : '/Consumer') as any);
 
     } catch (err: any) {
@@ -167,10 +155,7 @@ export default function LoginOTPScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
@@ -179,17 +164,12 @@ export default function LoginOTPScreen() {
         </Text>
 
         <View style={styles.logoContainer}>
-          <Image
-            source={require('../../assets/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
+          <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
         </View>
 
         <Text style={styles.brandName}>Electra Guard</Text>
         <Text style={styles.subtitle}>Utility Theft Detection & Analytics System</Text>
 
-        {/* Email — read only */}
         <View style={styles.inputGroup}>
           <Text style={styles.label}>{isAdmin ? 'Admin Email' : 'Email'}</Text>
           <TextInput
@@ -200,7 +180,6 @@ export default function LoginOTPScreen() {
           />
         </View>
 
-        {/* Password — read only */}
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Password</Text>
           <View style={styles.passwordContainer}>
@@ -212,16 +191,11 @@ export default function LoginOTPScreen() {
               placeholderTextColor="#9CA3AF"
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-              <Ionicons
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={20}
-                color="#6B7280"
-              />
+              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#6B7280" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* OTP Input */}
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Email Verification Code</Text>
           <TextInput
@@ -233,32 +207,17 @@ export default function LoginOTPScreen() {
             keyboardType="number-pad"
             maxLength={6}
           />
-          <Text style={styles.otpNote}>
-            OTP sent to {email}. Valid for 10 minutes.
-          </Text>
+          <Text style={styles.otpNote}>OTP sent to {email}. Valid for 10 minutes.</Text>
         </View>
 
-        {/* Forgot Password */}
-        <TouchableOpacity
-          style={styles.forgotContainer}
-          onPress={() => router.push('/screens/ForgotPasswordScreen')}
-        >
+        <TouchableOpacity style={styles.forgotContainer} onPress={() => router.push('/screens/ForgotPasswordScreen')}>
           <Text style={styles.forgotText}>Forgot Password?</Text>
         </TouchableOpacity>
 
-        {/* Verify Button */}
-        <TouchableOpacity
-          style={styles.loginButton}
-          onPress={handleVerify}
-          disabled={loading}
-        >
-          {loading
-            ? <ActivityIndicator color="#FFFFFF" />
-            : <Text style={styles.loginButtonText}>Verify & Login</Text>
-          }
+        <TouchableOpacity style={styles.loginButton} onPress={handleVerify} disabled={loading}>
+          {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.loginButtonText}>Verify & Login</Text>}
         </TouchableOpacity>
 
-        {/* Resend OTP */}
         <View style={styles.resendContainer}>
           <Text style={styles.resendText}>{"Didn't receive the code? "}</Text>
           {resendLoading ? (
@@ -275,12 +234,7 @@ export default function LoginOTPScreen() {
         {!isAdmin && (
           <Text style={styles.registerText}>
             {"Don't have an account? "}
-            <Text
-              style={styles.registerLink}
-              onPress={() => router.push('/screens/RegisterScreen')}
-            >
-              Register Now
-            </Text>
+            <Text style={styles.registerLink} onPress={() => router.push('/screens/RegisterScreen')}>Register Now</Text>
           </Text>
         )}
       </ScrollView>
@@ -289,45 +243,21 @@ export default function LoginOTPScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1, backgroundColor: '#FFFFFF', alignItems: 'center',
-    paddingHorizontal: 28, paddingTop: 20, paddingBottom: 40,
-  },
-  headerLabel: {
-    fontFamily: 'Inter_400Regular', fontSize: 12, color: '#9CA3AF',
-    alignSelf: 'flex-start', marginBottom: 24, letterSpacing: 0.5,
-  },
-  logoContainer: {
-    width: 64, height: 64, backgroundColor: '#0B3C5D', borderRadius: 16,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 12,
-  },
-  logo:      { width: 40, height: 40 },
-  brandName: { fontFamily: 'Poppins_700Bold', fontSize: 22, color: '#1F2933', marginBottom: 4 },
-  subtitle:  {
-    fontFamily: 'Inter_400Regular', fontSize: 12, color: '#6B7280',
-    marginBottom: 28, textAlign: 'center',
-  },
+  container:       { flexGrow: 1, backgroundColor: '#FFFFFF', alignItems: 'center', paddingHorizontal: 28, paddingTop: 20, paddingBottom: 40 },
+  headerLabel:     { fontFamily: 'Inter_400Regular', fontSize: 12, color: '#9CA3AF', alignSelf: 'flex-start', marginBottom: 24, letterSpacing: 0.5 },
+  logoContainer:   { width: 64, height: 64, backgroundColor: '#0B3C5D', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  logo:            { width: 40, height: 40 },
+  brandName:       { fontFamily: 'Poppins_700Bold', fontSize: 22, color: '#1F2933', marginBottom: 4 },
+  subtitle:        { fontFamily: 'Inter_400Regular', fontSize: 12, color: '#6B7280', marginBottom: 28, textAlign: 'center' },
   inputGroup:      { width: '100%', marginBottom: 14 },
   label:           { fontFamily: 'Inter_500Medium', fontSize: 13, color: '#374151', marginBottom: 6 },
-  input: {
-    width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.08)', borderRadius: 8,
-    paddingHorizontal: 16, paddingVertical: 13, fontFamily: 'Inter_400Regular',
-    fontSize: 14, color: '#1F2933', borderWidth: 1,
-    borderColor: 'rgba(107, 114, 128, 0.15)',
-  },
-  passwordContainer: {
-    width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.08)', borderRadius: 8,
-    paddingHorizontal: 16, paddingVertical: 13, flexDirection: 'row',
-    alignItems: 'center', borderWidth: 1, borderColor: 'rgba(107, 114, 128, 0.15)',
-  },
+  input:           { width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.08)', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 13, fontFamily: 'Inter_400Regular', fontSize: 14, color: '#1F2933', borderWidth: 1, borderColor: 'rgba(107, 114, 128, 0.15)' },
+  passwordContainer: { width: '100%', backgroundColor: 'rgba(107, 114, 128, 0.08)', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(107, 114, 128, 0.15)' },
   passwordInput:   { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 14, color: '#1F2933' },
   otpNote:         { fontFamily: 'Inter_400Regular', fontSize: 11, color: '#6B7280', marginTop: 6 },
   forgotContainer: { alignSelf: 'flex-end', marginBottom: 20, marginTop: 4 },
   forgotText:      { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#0B3C5D' },
-  loginButton: {
-    width: '100%', backgroundColor: '#0B3C5D', borderRadius: 8,
-    paddingVertical: 15, alignItems: 'center', marginBottom: 16,
-  },
+  loginButton:     { width: '100%', backgroundColor: '#0B3C5D', borderRadius: 8, paddingVertical: 15, alignItems: 'center', marginBottom: 16 },
   loginButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, color: '#FFFFFF' },
   resendContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   resendText:      { fontFamily: 'Inter_400Regular', fontSize: 13, color: '#6B7280' },

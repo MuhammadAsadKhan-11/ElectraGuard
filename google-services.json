@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "915882563099",
+    "firebase_url": "https://electraguard-43b18-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "electraguard-43b18",
+    "storage_bucket": "electraguard-43b18.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:915882563099:android:76669a5d6725c8b4978abe",
+        "android_client_info": {
+          "package_name": "com.electraguard.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxurpCdyHL_3VUWTfrQex3g6rveTs6Lwg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

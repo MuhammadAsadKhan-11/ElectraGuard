@@ -13,8 +13,9 @@
       "bundleIdentifier": "com.electraguard.app"
     },
     "android": {
+      "package": "com.electraguard.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "package": "com.electraguard.app",
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
@@ -48,6 +49,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bdb9f65b-6e4b-4cfe-800f-d3ed8a489156"
+      }
     }
   }
 }

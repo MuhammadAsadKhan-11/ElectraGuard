@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import React, { useState } from 'react';
 import {
   ActivityIndicator, Alert, ScrollView, StatusBar,
@@ -8,8 +8,7 @@ import {
 } from 'react-native';
 import { db } from '../../firebaseConfig';
 
-// ─── EmailJS Config ───────────────────────────────────────────────────────────
-
+// ── EmailJS Config ─────────────────────────────────────────────────────────────
 const EMAILJS = {
   CONSUMER: {
     SERVICE_ID:  'service_ppos2gl',
@@ -27,8 +26,6 @@ const EMAILJS = {
 
 type PortalType = 'consumer' | 'admin';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -36,13 +33,13 @@ function generateOTP(): string {
 async function sendOTPviaEmailJS(toEmail: string, otp: string, portal: PortalType): Promise<void> {
   const config = portal === 'admin' ? EMAILJS.ADMIN : EMAILJS.CONSUMER;
   const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-    method: 'POST',
+    method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      service_id:  config.SERVICE_ID,
-      template_id: config.TEMPLATE_ID,
-      user_id:     config.PUBLIC_KEY,
-      accessToken: config.PRIVATE_KEY,
+      service_id:      config.SERVICE_ID,
+      template_id:     config.TEMPLATE_ID,
+      user_id:         config.PUBLIC_KEY,
+      accessToken:     config.PRIVATE_KEY,
       template_params: { to_email: toEmail, otp_code: otp },
     }),
   });
@@ -50,48 +47,54 @@ async function sendOTPviaEmailJS(toEmail: string, otp: string, portal: PortalTyp
   if (!res.ok) throw new Error(`EmailJS Error: ${res.status} - ${responseText}`);
 }
 
-async function detectPortalAndEmail(
-  input: string
-): Promise<{ portal: PortalType; foundEmail: string }> {
+// FIX: Detects portal AND returns the Firestore document ID so we can store OTP there
+async function detectPortalAndEmail(input: string): Promise<{
+  portal: PortalType;
+  foundEmail: string;
+  docId: string;
+  collectionName: string;
+}> {
   const isEmail = input.includes('@');
 
-  // 1. Check admins first
+  // Check admins first
   const adminQ    = isEmail
-    ? query(collection(db, 'admins'),    where('email',      '==', input))
-    : query(collection(db, 'admins'),    where('adminId',    '==', input));
+    ? query(collection(db, 'admins'), where('email',   '==', input))
+    : query(collection(db, 'admins'), where('adminId', '==', input));
   const adminSnap = await getDocs(adminQ);
   if (!adminSnap.empty) {
     return {
-      portal:     'admin',
-      foundEmail: isEmail ? input : adminSnap.docs[0].data().email,
+      portal:         'admin',
+      foundEmail:     isEmail ? input : adminSnap.docs[0].data().email,
+      docId:          adminSnap.docs[0].id,
+      collectionName: 'admins',
     };
   }
 
-  // 2. Then check consumers
+  // Then check consumers
   const consumerQ    = isEmail
     ? query(collection(db, 'consumers'), where('email',      '==', input))
     : query(collection(db, 'consumers'), where('consumerId', '==', input));
   const consumerSnap = await getDocs(consumerQ);
   if (!consumerSnap.empty) {
     return {
-      portal:     'consumer',
-      foundEmail: isEmail ? input : consumerSnap.docs[0].data().email,
+      portal:         'consumer',
+      foundEmail:     isEmail ? input : consumerSnap.docs[0].data().email,
+      docId:          consumerSnap.docs[0].id,
+      collectionName: 'consumers',
     };
   }
 
   throw new Error('No account found with this email or ID.');
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
 export default function ForgotPasswordScreen() {
   const [email,          setEmail]          = useState('');
   const [loading,        setLoading]        = useState(false);
   const [detectedPortal, setDetectedPortal] = useState<PortalType | null>(null);
 
-  const isAdmin   = detectedPortal === 'admin';
-  const accent    = isAdmin ? '#1A73E8' : '#2EC4B6';
-  const noticeBg  = isAdmin ? '#F0F4FF' : '#F0FFFE';
+  const isAdmin  = detectedPortal === 'admin';
+  const accent   = isAdmin ? '#1A73E8' : '#2EC4B6';
+  const noticeBg = isAdmin ? '#F0F4FF' : '#F0FFFE';
   const noticeBdr = isAdmin ? '#C7D7F9' : '#CCF5F2';
 
   const handleSendCode = async () => {
@@ -101,25 +104,31 @@ export default function ForgotPasswordScreen() {
     }
     setLoading(true);
     try {
-      const { portal, foundEmail } = await detectPortalAndEmail(email.trim());
+      const { portal, foundEmail, docId, collectionName } = await detectPortalAndEmail(email.trim());
       setDetectedPortal(portal);
 
       const otp       = generateOTP();
       const expiresAt = Date.now() + 10 * 60 * 1000;
+
+      // FIX: Store OTP in Firestore — never pass it through navigation params
+      await updateDoc(doc(db, collectionName, docId), {
+        resetOtp:          otp,
+        resetOtpExpiresAt: expiresAt,
+      });
 
       await sendOTPviaEmailJS(foundEmail, otp, portal);
 
       Alert.alert('Code Sent', 'A 6-digit code has been sent to your email.', [
         {
           text: 'OK',
-          // Both admin and consumer use the same OTP verify screen in /screens/
           onPress: () => router.push({
             pathname: '/screens/ResetOTPVerifyScreen',
             params: {
-              email:     foundEmail,
-              otp,
-              expiresAt: expiresAt.toString(),
-              portal,          // pass portal so OTP screen knows where to redirect after reset
+              email:  foundEmail,
+              docId,
+              collectionName,
+              portal,
+              // FIX: No OTP or expiresAt in params — fetched from Firestore on verify
             },
           }),
         },
@@ -176,16 +185,10 @@ export default function ForgotPasswordScreen() {
         onPress={handleSendCode}
         disabled={loading}
       >
-        {loading
-          ? <ActivityIndicator color="#FFFFFF" />
-          : <Text style={styles.sendButtonText}>Send Code</Text>}
+        {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.sendButtonText}>Send Code</Text>}
       </TouchableOpacity>
 
-      {/* Back to Login — shared LoginScreen for both portals */}
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.push('/screens/LoginScreen')}
-      >
+      <TouchableOpacity style={styles.backButton} onPress={() => router.push('/screens/LoginScreen')}>
         <Text style={styles.backButtonText}>Back to Login</Text>
       </TouchableOpacity>
 
@@ -196,8 +199,6 @@ export default function ForgotPasswordScreen() {
     </ScrollView>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container:           { flexGrow: 1, backgroundColor: '#FFFFFF', paddingHorizontal: 24, paddingTop: 60, paddingBottom: 40, alignItems: 'center' },

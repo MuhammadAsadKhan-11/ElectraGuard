@@ -2,23 +2,23 @@ import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 import { getFirestore } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage'; // ← ADD THIS
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyD1F98ESsaDWGkeuqnJ76EuAKdhjYInQME",
-  authDomain: "electraguard-43b18.firebaseapp.com",
-  databaseURL: "https://electraguard-43b18-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "electraguard-43b18",
-  storageBucket: "electraguard-43b18.firebasestorage.app",
-  messagingSenderId: "915882563099",
-  appId: "1:915882563099:web:9a34db5b39dc8a7f978abe",
-  measurementId: "G-DQ6D41MHJ5"
+  apiKey:            process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain:        process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  databaseURL:       process.env.EXPO_PUBLIC_FIREBASE_DATABASE_URL,
+  projectId:         process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket:     process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId:             process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  measurementId:     process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const rtdb = getDatabase(app);
-export const storage = getStorage(app); // ← ADD THIS
+export const auth    = getAuth(app);
+export const db      = getFirestore(app);
+export const rtdb    = getDatabase(app);
+export const storage = getStorage(app);
 export default app;
