@@ -36,7 +36,7 @@ export default function RootLayout() {
           if (email) {
             await signInWithEmailLink(auth, email, url);
             await AsyncStorage.removeItem('adminEmailForLink');
-            router.replace('/Admin');
+            router.replace('/src/Admin');
           }
         } catch (e) {
           console.error('Magic link error:', e);
@@ -64,15 +64,15 @@ export default function RootLayout() {
     <>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="Admin" />
-        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="src/Admin" />
+        <Stack.Screen name="src/(tabs)" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="screens/SplashScreen" />
-        <Stack.Screen name="screens/LoginScreen" />
-        <Stack.Screen name="screens/RegisterScreen" />
-        <Stack.Screen name="screens/ForgotPasswordScreen" />
-        <Stack.Screen name="screens/LoginOTPScreen" />
-        <Stack.Screen name="screens/ResetOTPVerifyScreen" />
+        <Stack.Screen name="src/screens/SplashScreen" />
+        <Stack.Screen name="src/screens/LoginScreen" />
+        <Stack.Screen name="src/screens/RegisterScreen" />
+        <Stack.Screen name="src/screens/ForgotPasswordScreen" />
+        <Stack.Screen name="src/screens/LoginOTPScreen" />
+        <Stack.Screen name="src/screens/ResetOTPVerifyScreen" />
         {/* <Stack.Screen name="screens/ResetPasswordScreen" />  ← YEH ADD KARO */}
       </Stack>
     </>

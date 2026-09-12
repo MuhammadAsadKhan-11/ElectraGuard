@@ -49,6 +49,7 @@ export interface Translations {
 
   // ── Menu Items ──
   notifications:    string;
+  notificationsBar: string; 
   notificationsSub: string;
   systemSettings:   string;
   changePassword:   string;
