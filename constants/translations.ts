@@ -157,6 +157,7 @@ export const en: Translations = {
   about:            'About',
 
   notifications:    'Notifications',
+  notificationsBar: 'Push notifications enabled',
   notificationsSub: 'Push notifications enabled',
   systemSettings:   'System Settings',
   changePassword:   'Change Password',

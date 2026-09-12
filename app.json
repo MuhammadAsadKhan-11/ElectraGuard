@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.electraguard.app"
+      "bundleIdentifier": "com.electraguard.app",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "android": {
       "package": "com.electraguard.app",
@@ -22,7 +25,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "runtimeVersion": "1.0.0"
     },
     "web": {
       "output": "static",
@@ -55,6 +59,10 @@
       "eas": {
         "projectId": "bdb9f65b-6e4b-4cfe-800f-d3ed8a489156"
       }
+    },
+    "owner": "asadkhan111",
+    "updates": {
+      "url": "https://u.expo.dev/bdb9f65b-6e4b-4cfe-800f-d3ed8a489156"
     }
   }
 }
