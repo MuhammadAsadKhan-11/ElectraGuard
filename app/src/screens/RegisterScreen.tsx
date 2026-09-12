@@ -62,13 +62,26 @@ export default function RegisterScreen() {
     password: "",
     confirmPassword: "",
   });
+  
+  const [cnicError, setCnicError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const updateField = (key: string, value: string) =>
-    setForm((prev) => ({ ...prev, [key]: value }));
+ const updateField = (key: string, value: string) =>
+  setForm((prev) => ({ ...prev, [key]: value }));
+
+const handleCnicChange = (value: string) => {
+  const digitsOnly = value.replace(/[^0-9]/g, "");
+  if (digitsOnly.length > 13) {
+    setCnicError("CNIC number must be exactly 13 digits.");
+    updateField("cnicNumber", digitsOnly.slice(0, 13));
+  } else {
+    setCnicError("");
+    updateField("cnicNumber", digitsOnly);
+  }
+};
 
   const validateForm = () => {
     const {
@@ -92,6 +105,10 @@ export default function RegisterScreen() {
       Alert.alert("Error", "Please fill in all fields.");
       return false;
     }
+    if (cnicNumber.length !== 13) {
+    Alert.alert("Error", "CNIC number must be exactly 13 digits.");
+    return false;
+  }
     if (password !== confirmPassword) {
       Alert.alert("Error", "Passwords do not match.");
       return false;
@@ -129,12 +146,12 @@ export default function RegisterScreen() {
             : "This email is already registered with a different account.",
           allMatch
             ? [
-                {
-                  text: "Go to Login",
-                  onPress: () => router.replace("/src/screens/LoginScreen"),
-                },
-                { text: "Cancel", style: "cancel" },
-              ]
+              {
+                text: "Go to Login",
+                onPress: () => router.replace("/src/screens/LoginScreen"),
+              },
+              { text: "Cancel", style: "cancel" },
+            ]
             : [{ text: "OK", style: "cancel" }],
         );
         setLoading(false);
@@ -279,17 +296,26 @@ export default function RegisterScreen() {
       </Text>
 
       {fields.map(({ key, placeholder, keyboard }) => (
-        <TextInput
-          key={key}
-          style={styles.input}
-          placeholder={placeholder}
-          placeholderTextColor="#9CA3AF"
-          value={form[key as keyof typeof form]}
-          onChangeText={(v) => updateField(key, v)}
-          keyboardType={keyboard as any}
-          autoCapitalize="none"
-        />
-      ))}
+  <View key={key} style={{ width: "100%" }}>
+    <TextInput
+      style={styles.input}
+      placeholder={placeholder}
+      placeholderTextColor="#9CA3AF"
+      value={form[key as keyof typeof form]}
+      onChangeText={(v) =>
+        key === "cnicNumber" ? handleCnicChange(v) : updateField(key, v)
+      }
+      keyboardType={keyboard as any}
+      autoCapitalize="none"
+      maxLength={key === "cnicNumber" ? 13 : undefined}
+    />
+    {key === "cnicNumber" && cnicError ? (
+      <Text style={{ color: "red", fontSize: 12, marginTop: -8, marginBottom: 8, marginLeft: 4 }}>
+        {cnicError}
+      </Text>
+    ) : null}
+  </View>
+))}
 
       {(
         [
