@@ -19,11 +19,11 @@ import {
 } from "react-native";
 import { auth, db } from "../../../firebaseConfig";
 
-const EMAILJS_SERVICE_ID = "service_wynnt38";
-const EMAILJS_PUBLIC_KEY = "hMZkNajE1DpuQeOMQ";
-const EMAILJS_PRIVATE_KEY = "n5Zknt7IKTmMQdj_C9dDA";
-const EMAILJS_CONSUMER_TEMPLATE_ID = "template_p7vjo2g";
-const EMAILJS_ADMIN_TEMPLATE_ID = "template_kx85hs2";
+const EMAILJS_SERVICE_ID = process.env.EXPO_PUBLIC_EMAILJS_SERVICE_ID!;
+const EMAILJS_PUBLIC_KEY = process.env.EXPO_PUBLIC_EMAILJS_PUBLIC_KEY!;
+const EMAILJS_PRIVATE_KEY = process.env.EXPO_PUBLIC_EMAILJS_PRIVATE_KEY!;
+const EMAILJS_CONSUMER_TEMPLATE_ID = process.env.EXPO_PUBLIC_EMAILJS_CONSUMER_TEMPLATE_ID!;
+const EMAILJS_ADMIN_TEMPLATE_ID = process.env.EXPO_PUBLIC_EMAILJS_ADMIN_TEMPLATE_ID!;
 
 export default function LoginOTPScreen() {
   const params = useLocalSearchParams<{

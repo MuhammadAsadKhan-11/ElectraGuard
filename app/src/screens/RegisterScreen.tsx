@@ -26,10 +26,10 @@ import {
 import { auth, db } from "../../../firebaseConfig";
 
 // ── EmailJS Config ─────────────────────────────────────────────────────────────
-const EMAILJS_SERVICE_ID = "service_wynnt38";
-const EMAILJS_PUBLIC_KEY = "hMZkNajE1DpuQeOMQ";
-const EMAILJS_PRIVATE_KEY = "n5Zknt7IKTmMQdj_C9dDA";
-const EMAILJS_CONSUMER_TEMPLATE_ID = "template_p7vjo2g";
+const EMAILJS_SERVICE_ID = process.env.EXPO_PUBLIC_EMAILJS_SERVICE_ID!;
+const EMAILJS_PUBLIC_KEY = process.env.EXPO_PUBLIC_EMAILJS_PUBLIC_KEY!;
+const EMAILJS_PRIVATE_KEY = process.env.EXPO_PUBLIC_EMAILJS_PRIVATE_KEY!;
+const EMAILJS_CONSUMER_TEMPLATE_ID = process.env.EXPO_PUBLIC_EMAILJS_CONSUMER_TEMPLATE_ID!;
 
 const generateOTP = (): string =>
   Math.floor(100000 + Math.random() * 900000).toString();
