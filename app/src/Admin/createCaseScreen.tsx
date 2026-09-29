@@ -1,10 +1,13 @@
+// app/src/Admin/createCaseScreen.tsx
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,17 +15,23 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Colors } from "../../../constants/Colors";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Colors as AppColors } from "../../../constants/Colors";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
+import { getStrings } from "../../../constants/caseScreensStrings";
+import { createCase } from "../../../hooks/useCasesApi";
 
-// Firebase
-import { ref as dbRef, get, push, set } from "firebase/database";
-import { rtdb } from "../../../firebaseConfig"; // ← rtdb, storage hata diya
-import { sendPushNotification } from "../../../utils/notifications";
-
-interface Props {
-  navigation: any;
-}
+// Fallbacks: agar Colors.ts mein koi key missing ho to TypeScript/runtime error na aaye.
+const Colors = {
+  primary: "#2563eb",
+  text: "#111827",
+  textSecondary: "#6b7280",
+  white: "#ffffff",
+  bg: "#f5f6fa",
+  border: "#e5e7eb",
+  danger: "#ef4444",
+  ...(AppColors as Record<string, string>),
+};
 
 type RiskLevel = "Low" | "Medium" | "High" | "Critical";
 type CaseCategory =
@@ -67,11 +76,7 @@ function Dropdown<T extends string>({
   return (
     <View style={dd.wrap}>
       <Text style={dd.label}>{label} *</Text>
-      <TouchableOpacity
-        style={dd.btn}
-        onPress={() => setOpen(!open)}
-        activeOpacity={0.8}
-      >
+      <TouchableOpacity style={dd.btn} onPress={() => setOpen((o) => !o)} activeOpacity={0.8}>
         <Text style={[dd.btnText, !value && { color: Colors.textSecondary }]}>
           {value || placeholder}
         </Text>
@@ -88,9 +93,7 @@ function Dropdown<T extends string>({
                 setOpen(false);
               }}
             >
-              <Text style={[dd.itemText, value === opt && dd.itemTextActive]}>
-                {opt}
-              </Text>
+              <Text style={[dd.itemText, value === opt && dd.itemTextActive]}>{opt}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -101,12 +104,7 @@ function Dropdown<T extends string>({
 
 const dd = StyleSheet.create({
   wrap: { marginBottom: 16 },
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 6,
-  },
+  label: { fontSize: 13, fontWeight: "600", color: Colors.text, marginBottom: 6 },
   btn: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -127,7 +125,6 @@ const dd = StyleSheet.create({
     borderRadius: 12,
     marginTop: 4,
     overflow: "hidden",
-    zIndex: 99,
   },
   item: {
     paddingHorizontal: 14,
@@ -140,10 +137,25 @@ const dd = StyleSheet.create({
   itemTextActive: { color: Colors.primary, fontWeight: "600" },
 });
 
-export default function CreateCaseScreen({ navigation }: Props) {
-  const { colors } = useAppSettings();
-  const [consumerId, setConsumerId] = useState("");
-  const [consumerName, setConsumerName] = useState("");
+const firstParam = (v: string | string[] | undefined) =>
+  (Array.isArray(v) ? v[0] : v) || "";
+
+export default function CreateCaseScreen() {
+  const router = useRouter();
+  const { colors, language } = useAppSettings();
+  const S = getStrings(language).createCase;
+
+  // Consumer Profile screen se "Create Case" par tap karne par consumerId/consumerName
+  // params se aate hain — pehle se fill kar dete hain.
+  const routeParams = useLocalSearchParams<{
+    consumerId?: string | string[];
+    consumerName?: string | string[];
+  }>();
+  const prefilledConsumerId = firstParam(routeParams.consumerId);
+  const prefilledConsumerName = firstParam(routeParams.consumerName);
+
+  const [consumerId, setConsumerId] = useState(prefilledConsumerId);
+  const [consumerName, setConsumerName] = useState(prefilledConsumerName);
   const [area, setArea] = useState("");
   const [riskLevel, setRiskLevel] = useState<RiskLevel | "">("");
   const [category, setCategory] = useState<CaseCategory | "">("");
@@ -153,50 +165,64 @@ export default function CreateCaseScreen({ navigation }: Props) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/src/Admin/CasesScreen" as any);
+  };
+
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert(
-        "Permission Required",
-        "Please allow access to your photo library.",
-      );
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-    });
-    if (!result.canceled) {
-      const picked: UploadedFile[] = result.assets.map((a) => ({
-        uri: a.uri,
-        name: a.fileName || `image_${Date.now()}.jpg`,
-        type: "image",
-        mimeType: a.mimeType || "image/jpeg",
-      }));
-      setFiles((prev) => [...prev, ...picked]);
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Please allow access to your photo library.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"], // MediaTypeOptions deprecated hai (Expo SDK 52+)
+        allowsMultipleSelection: true,
+        quality: 0.8,
+      });
+      if (!result.canceled) {
+        const picked: UploadedFile[] = result.assets.map((a, i) => ({
+          uri: a.uri,
+          name: a.fileName || `image_${Date.now()}_${i}.jpg`,
+          type: "image",
+          mimeType: a.mimeType || "image/jpeg",
+        }));
+        setFiles((prev) => [...prev, ...picked]);
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not pick image.");
     }
   };
 
   const pickDocument = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: "*/*",
-      copyToCacheDirectory: true,
-      multiple: true,
-    });
-    if (!result.canceled) {
-      const picked: UploadedFile[] = result.assets.map((a) => ({
-        uri: a.uri,
-        name: a.name,
-        type: "document",
-        mimeType: a.mimeType || "application/octet-stream",
-      }));
-      setFiles((prev) => [...prev, ...picked]);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+      if (!result.canceled) {
+        const picked: UploadedFile[] = result.assets.map((a) => ({
+          uri: a.uri,
+          name: a.name,
+          type: "document",
+          mimeType: a.mimeType || "application/octet-stream",
+        }));
+        setFiles((prev) => [...prev, ...picked]);
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not pick document.");
     }
   };
 
-  // Storage hata diya — sirf file info save hogi (URL nahi)
+  const removeFile = (idx: number) =>
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
+
   const handleSubmit = async () => {
+    if (submitting) return;
+
     if (
       !consumerId.trim() ||
       !consumerName.trim() ||
@@ -206,261 +232,215 @@ export default function CreateCaseScreen({ navigation }: Props) {
       !description.trim() ||
       !priority
     ) {
-      Alert.alert("Missing Fields", "Please fill in all required fields.");
+      Alert.alert(S.missingFieldsTitle, S.missingFieldsMsg);
       return;
     }
 
     setSubmitting(true);
-
     try {
-      const caseNumber = `CASE${Date.now().toString().slice(-6)}`;
-      const newCaseRef = push(dbRef(rtdb, "cases")); // ← rtdb
-      const caseId = newCaseRef.key!;
-
-      const now = new Date();
-      const caseData = {
-        id: caseId,
-        caseNumber,
+      // Ek hi backend call: case Firestore mein banta hai, evidence upload hoti hai,
+      // aur consumer ko notification chala jata hai — sab automatically.
+      const res = (await createCase({
         consumerId: consumerId.trim(),
         consumerName: consumerName.trim(),
         area: area.trim(),
         riskLevel,
         category,
         description: description.trim(),
-        inspector: inspector.trim() || null,
+        inspector: inspector.trim() || undefined,
         priority,
-        status: "Open",
-        createdAt: now.toISOString().split("T")[0],
-        evidences: files.length,
-        evidenceImages: files.map((f) => ({
-          name: f.name,
-          type: f.type,
-          uri: f.uri,
-        })),
-        timeline: [
-          {
-            action: `Case created — ${category}`,
-            date: now.toISOString().split("T")[0],
-            time: now.toTimeString().slice(0, 5),
-          },
-        ],
-        meterNumber: consumerId.trim(),
-      };
+        files,
+      })) as { caseNumber?: string } | undefined;
 
-      await set(newCaseRef, caseData);
-
-      try {
-        const consumerSnap = await get(
-          dbRef(rtdb, `consumers/${consumerId.trim()}`),
-        ); // ← rtdb
-        const consumerData = consumerSnap.val();
-        if (consumerData?.pushToken) {
-          await sendPushNotification(
-            consumerData.pushToken,
-            "⚠️ Case Filed Against Your Account",
-            `A new case (${caseNumber}) has been filed regarding: ${category}. Our team will investigate shortly.`,
-          );
-        }
-        await push(dbRef(rtdb, `notifications/${consumerId.trim()}`), {
-          // ← rtdb
-          type: "case_filed",
-          caseId,
-          caseNumber,
-          message: `A new case (${caseNumber}) has been filed: ${category}`,
-          timestamp: now.toISOString(),
-          read: false,
-        });
-      } catch (notifErr) {
-        console.warn("Notification failed (non-critical):", notifErr);
-      }
-
-      Alert.alert(
-        "✅ Case Created",
-        `Case ${caseNumber} has been created successfully.`,
-        [{ text: "OK", onPress: () => navigation.goBack() }],
-      );
+      Alert.alert(S.successTitle, S.successMsg(res?.caseNumber ?? ""), [
+        { text: "OK", onPress: goBack },
+      ]);
     } catch (err: any) {
-      console.error(err);
-      Alert.alert("Error", `Failed to create case: ${err.message}`);
+      Alert.alert(S.errorTitle, S.errorMsg(err?.message ?? String(err)));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const removeFile = (idx: number) =>
-    setFiles((prev) => prev.filter((_, i) => i !== idx));
-
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors?.background ?? Colors.bg }]}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backBtn}
-          >
-            <Text style={styles.backArrow}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create New Case</Text>
-          <View style={{ width: 40 }} />
-        </View>
-
-        <View style={styles.form}>
-          <View style={styles.fieldWrap}>
-            <Text style={styles.label}>Consumer ID *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. CONS-2024-1234"
-              placeholderTextColor={Colors.textSecondary}
-              value={consumerId}
-              onChangeText={setConsumerId}
-              autoCapitalize="characters"
-            />
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 40 }}
+        >
+          <View style={[styles.header, { backgroundColor: colors?.card ?? Colors.white }]}>
+            <TouchableOpacity onPress={goBack} style={styles.backBtn}>
+              <Text style={styles.backArrow}>←</Text>
+            </TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: colors?.text ?? Colors.text }]}>
+              {S.title}
+            </Text>
+            <View style={{ width: 40 }} />
           </View>
 
-          <View style={styles.fieldWrap}>
-            <Text style={styles.label}>Consumer Name *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Ahmad Ali"
-              placeholderTextColor={Colors.textSecondary}
-              value={consumerName}
-              onChangeText={setConsumerName}
-            />
-          </View>
-
-          <View style={styles.fieldWrap}>
-            <Text style={styles.label}>Area / Location *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter area or location"
-              placeholderTextColor={Colors.textSecondary}
-              value={area}
-              onChangeText={setArea}
-            />
-          </View>
-
-          <Dropdown
-            label="Risk Level"
-            options={RISK_LEVELS}
-            value={riskLevel}
-            onChange={setRiskLevel}
-            placeholder="Select risk level"
-          />
-
-          <Dropdown
-            label="Case Category"
-            options={CASE_CATEGORIES}
-            value={category}
-            onChange={setCategory}
-            placeholder="Select case category"
-          />
-
-          <View style={styles.fieldWrap}>
-            <Text style={styles.label}>Description *</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Provide detailed description..."
-              placeholderTextColor={Colors.textSecondary}
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-          </View>
-
-          <View style={styles.fieldWrap}>
-            <Text style={styles.label}>Assign Inspector</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Inspector name (optional)"
-              placeholderTextColor={Colors.textSecondary}
-              value={inspector}
-              onChangeText={setInspector}
-            />
-          </View>
-
-          <Dropdown
-            label="Priority Level"
-            options={PRIORITIES}
-            value={priority}
-            onChange={setPriority}
-            placeholder="Select priority level"
-          />
-
-          <View style={styles.uploadSection}>
-            <Text style={styles.label}>Evidence Upload</Text>
-            <View style={styles.uploadBtnRow}>
-              <TouchableOpacity
-                style={styles.uploadBtn}
-                onPress={pickImage}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.uploadBtnIcon}>🖼</Text>
-                <Text style={styles.uploadBtnText}>Upload Image</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.uploadBtn, styles.uploadBtnDoc]}
-                onPress={pickDocument}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.uploadBtnIcon}>📄</Text>
-                <Text style={[styles.uploadBtnText, { color: Colors.primary }]}>
-                  Upload Document
-                </Text>
-              </TouchableOpacity>
+          <View style={styles.form}>
+            <View style={styles.fieldWrap}>
+              <Text style={[styles.label, { color: colors?.text ?? Colors.text }]}>
+                {S.consumerId}
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder={S.ph_consumerId}
+                placeholderTextColor={Colors.textSecondary}
+                value={consumerId}
+                onChangeText={setConsumerId}
+                autoCapitalize="characters"
+              />
             </View>
-            {files.length > 0 && (
-              <View style={styles.fileList}>
-                {files.map((f, i) => (
-                  <View key={i} style={styles.fileItem}>
-                    <Text style={styles.fileIcon}>
-                      {f.type === "image" ? "🖼" : "📄"}
-                    </Text>
-                    <Text style={styles.fileName} numberOfLines={1}>
-                      {f.name}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => removeFile(i)}
-                      style={styles.removeBtn}
-                    >
-                      <Text style={styles.removeBtnText}>✕</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
+
+            <View style={styles.fieldWrap}>
+              <Text style={[styles.label, { color: colors?.text ?? Colors.text }]}>
+                {S.consumerName}
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder={S.ph_consumerName}
+                placeholderTextColor={Colors.textSecondary}
+                value={consumerName}
+                onChangeText={setConsumerName}
+              />
+            </View>
+
+            <View style={styles.fieldWrap}>
+              <Text style={[styles.label, { color: colors?.text ?? Colors.text }]}>
+                {S.areaLocation}
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder={S.ph_area}
+                placeholderTextColor={Colors.textSecondary}
+                value={area}
+                onChangeText={setArea}
+              />
+            </View>
+
+            <Dropdown
+              label={S.riskLevel}
+              options={RISK_LEVELS}
+              value={riskLevel}
+              onChange={setRiskLevel}
+              placeholder={S.selectRisk}
+            />
+            <Dropdown
+              label={S.caseCategory}
+              options={CASE_CATEGORIES}
+              value={category}
+              onChange={setCategory}
+              placeholder={S.selectCategory}
+            />
+
+            <View style={styles.fieldWrap}>
+              <Text style={[styles.label, { color: colors?.text ?? Colors.text }]}>
+                {S.description}
+              </Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder={S.ph_description}
+                placeholderTextColor={Colors.textSecondary}
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+            </View>
+
+            <View style={styles.fieldWrap}>
+              <Text style={[styles.label, { color: colors?.text ?? Colors.text }]}>
+                {S.assignInspectorOptional}
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder={S.ph_inspector}
+                placeholderTextColor={Colors.textSecondary}
+                value={inspector}
+                onChangeText={setInspector}
+              />
+            </View>
+
+            <Dropdown
+              label={S.priorityLevel}
+              options={PRIORITIES}
+              value={priority}
+              onChange={setPriority}
+              placeholder={S.selectPriority}
+            />
+
+            <View style={styles.uploadSection}>
+              <Text style={[styles.label, { color: colors?.text ?? Colors.text }]}>
+                {S.evidenceUpload}
+              </Text>
+              <View style={styles.uploadBtnRow}>
+                <TouchableOpacity style={styles.uploadBtn} onPress={pickImage} activeOpacity={0.8}>
+                  <Text style={styles.uploadBtnIcon}>🖼</Text>
+                  <Text style={styles.uploadBtnText}>{S.uploadImage}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.uploadBtn, styles.uploadBtnDoc]}
+                  onPress={pickDocument}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.uploadBtnIcon}>📄</Text>
+                  <Text style={[styles.uploadBtnText, { color: Colors.primary }]}>
+                    {S.uploadDocument}
+                  </Text>
+                </TouchableOpacity>
               </View>
-            )}
+
+              {files.length > 0 && (
+                <View style={styles.fileList}>
+                  {files.map((f, i) => (
+                    <View key={`${f.uri}-${i}`} style={styles.fileItem}>
+                      <Text style={styles.fileIcon}>{f.type === "image" ? "🖼" : "📄"}</Text>
+                      <Text
+                        style={[styles.fileName, { color: colors?.text ?? Colors.text }]}
+                        numberOfLines={1}
+                      >
+                        {f.name}
+                      </Text>
+                      <TouchableOpacity onPress={() => removeFile(i)} style={styles.removeBtn}>
+                        <Text style={styles.removeBtnText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
+              onPress={handleSubmit}
+              activeOpacity={0.85}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <View style={styles.submitLoading}>
+                  <ActivityIndicator color="#fff" size="small" />
+                  <Text style={styles.submitBtnText}>{S.creating}</Text>
+                </View>
+              ) : (
+                <Text style={styles.submitBtnText}>{S.createCase}</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.cancelBtn} onPress={goBack} disabled={submitting}>
+              <Text style={[styles.cancelBtnText, { color: colors?.subText ?? Colors.textSecondary }]}>
+                {S.cancel}
+              </Text>
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-            onPress={handleSubmit}
-            activeOpacity={0.85}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <View style={styles.submitLoading}>
-                <ActivityIndicator color="#fff" size="small" />
-                <Text style={styles.submitBtnText}>Creating Case…</Text>
-              </View>
-            ) : (
-              <Text style={styles.submitBtnText}>Create Case</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.cancelBtn}
-            onPress={() => navigation.goBack()}
-            disabled={submitting}
-          >
-            <Text style={styles.cancelBtnText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={{ height: 40 }} />
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -474,7 +454,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     padding: 16,
     margin: 16,
-    marginTop: 40,
+    marginTop: 16,
     borderRadius: 16,
     shadowColor: "#000",
     shadowOpacity: 0.06,
@@ -486,12 +466,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
   form: { paddingHorizontal: 16, paddingTop: 4 },
   fieldWrap: { marginBottom: 16 },
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 6,
-  },
+  label: { fontSize: 13, fontWeight: "600", color: Colors.text, marginBottom: 6 },
   input: {
     backgroundColor: Colors.white,
     borderWidth: 1,
@@ -560,9 +535,5 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     backgroundColor: Colors.white,
   },
-  cancelBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-  },
+  cancelBtnText: { fontSize: 15, fontWeight: "600", color: Colors.textSecondary },
 });

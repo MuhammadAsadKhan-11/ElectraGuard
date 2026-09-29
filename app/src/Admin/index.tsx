@@ -1,10 +1,13 @@
+// app/src/Admin/DashboardScreen.tsx
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Dimensions,
   Image,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -13,26 +16,22 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { consumptionChartData, dashboardStats } from "../../../data/mockData";
+import NotificationBell from "../../../components/NotificationBell";
+import { formatNumber, niceCeil, palette } from "../../../constants/adminUi";
 import { auth, db } from "../../../firebaseConfig";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
+import {
+  ChartPoint,
+  DashboardResponse,
+  useApi,
+  useLiveRefresh,
+} from "../../../hooks/useAdminApi";
 
 const { width } = Dimensions.get("window");
 const CHART_WIDTH = width - 64;
 const CHART_HEIGHT = 160;
-
-const Colors = {
-  primary: "#0B3C5D",
-  accent: "#007AFF",
-  danger: "#FF3B30",
-  warning: "#FF9500",
-  success: "#34C759",
-  bg: "#F2F2F7",
-  white: "#FFFFFF",
-  text: "#1C1C1E",
-  textSecondary: "#8E8E93",
-  border: "#E5E5EA",
-};
+const PLOT_LEFT = 34; // y-axis labels ke liye jagah
+const PLOT_RIGHT = 10;
 
 const KPI_IMAGES = [
   require("../../../assets/ChartLine.png"),
@@ -43,6 +42,7 @@ const KPI_IMAGES = [
   require("../../../assets/CheckCircle.png"),
 ];
 
+// ─── KPI Card ────────────────────────────────────────────────
 const KPICard = ({
   title,
   value,
@@ -57,311 +57,358 @@ const KPICard = ({
   color: string;
   badge?: { label: string; color: string };
   imageIndex: number;
-}) => (
-  <View style={styles.kpiCard}>
-    <View style={styles.kpiHeader}>
-      <Image
-        source={KPI_IMAGES[imageIndex]}
-        style={styles.kpiIcon}
-        resizeMode="contain"
-      />
-      {badge && (
-        <View style={[styles.badge, { backgroundColor: badge.color + "20" }]}>
-          <Text style={[styles.badgeText, { color: badge.color }]}>
-            {badge.label}
-          </Text>
-        </View>
-      )}
+}) => {
+  const { colors } = useAppSettings();
+  return (
+    <View style={[styles.kpiCard, { backgroundColor: colors.card }]}>
+      <View style={styles.kpiHeader}>
+        <Image
+          source={KPI_IMAGES[imageIndex]}
+          style={styles.kpiIcon}
+          resizeMode="contain"
+        />
+        {badge && (
+          <View style={[styles.badge, { backgroundColor: badge.color + "20" }]}>
+            <Text style={[styles.badgeText, { color: badge.color }]}>
+              {badge.label}
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text style={[styles.kpiValue, { color }]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={[styles.kpiTitle, { color: colors.subText }]} numberOfLines={2}>
+        {title}
+      </Text>
+      <Text style={[styles.kpiSubtitle, { color: colors.subText }]}>
+        {subtitle}
+      </Text>
     </View>
-    <Text style={[styles.kpiValue, { color }]} numberOfLines={1}>
-      {value}
-    </Text>
-    <Text style={styles.kpiTitle} numberOfLines={2}>
-      {title}
-    </Text>
-    <Text style={styles.kpiSubtitle}>{subtitle}</Text>
-  </View>
-);
+  );
+};
 
-// ─── Mini Chart ──────────────────────────────────────────────────────────────
-const MiniChart = () => {
-  const maxVal = 500;
-  const minVal = 140;
-  const range = maxVal - minVal;
+const changeBadge = (pct: number | null | undefined) =>
+  pct === null || pct === undefined
+    ? undefined
+    : {
+        label: `${pct >= 0 ? "▲" : "▼"} ${Math.abs(pct)}%`,
+        color: pct >= 0 ? palette.success : palette.danger,
+      };
+
+// ─── Chart (red = theft, blue = normal) ──────────────────────
+const MiniChart = ({
+  points,
+  spikeRatio,
+}: {
+  points: ChartPoint[];
+  spikeRatio: number | null;
+}) => {
+  const { colors } = useAppSettings();
+
+  const rawMax = Math.max(1, ...points.flatMap((p) => [p.normal, p.theft]));
+  const maxVal = niceCeil(rawMax);
+  const plotWidth = CHART_WIDTH - PLOT_LEFT - PLOT_RIGHT;
 
   const getY = (val: number) =>
-    CHART_HEIGHT - ((val - minVal) / range) * (CHART_HEIGHT * 0.85) - 10;
+    CHART_HEIGHT - 10 - (val / maxVal) * (CHART_HEIGHT * 0.85);
   const getX = (i: number) =>
-    (i / (consumptionChartData.length - 1)) * (CHART_WIDTH - 20) + 10;
+    points.length > 1 ? PLOT_LEFT + (i / (points.length - 1)) * plotWidth : PLOT_LEFT;
+
+  const ticks = [0.25, 0.5, 0.75, 1].map((f) => ({
+    value: Math.round(maxVal * f),
+    bottom: 10 + f * CHART_HEIGHT * 0.85 - 6,
+  }));
+
+  const segment = (
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    color: string,
+    key: string,
+  ) => {
+    const len = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+    return (
+      <View
+        key={key}
+        style={[
+          styles.chartLine,
+          {
+            left: x1,
+            top: y1,
+            width: len,
+            backgroundColor: color,
+            transform: [{ rotate: `${angle}deg` }],
+          },
+        ]}
+      />
+    );
+  };
 
   return (
-    <View style={styles.chartWrapper}>
+    <View>
       <View style={styles.chartHeaderRow}>
         <View>
-          <Text style={styles.chartTitle}>Total Consumption</Text>
-          <Text style={styles.chartSub}>Last 7 days</Text>
+          <Text style={[styles.chartTitle, { color: colors.text }]}>
+            Total Consumption
+          </Text>
+          <Text style={[styles.chartSub, { color: colors.subText }]}>
+            Last 7 days
+          </Text>
         </View>
-        <View style={styles.spikeTag}>
-          <Text style={styles.spikeTagText}>▲ 2.5x spike</Text>
-        </View>
+        {spikeRatio !== null && spikeRatio >= 1.2 && (
+          <View style={styles.spikeTag}>
+            <Text style={styles.spikeTagText}>▲ {spikeRatio}x spike</Text>
+          </View>
+        )}
       </View>
 
-      <View style={{ height: CHART_HEIGHT, marginTop: 8 }}>
-        {[200, 300, 400, 500].map((v) => (
-          <View
-            key={v}
-            style={[
-              styles.gridLineRow,
-              { bottom: ((v - minVal) / range) * CHART_HEIGHT * 0.85 + 5 },
-            ]}
-          >
-            <Text style={styles.gridLabel}>{v}</Text>
-            <View style={styles.gridLineSep} />
+      <View style={{ height: CHART_HEIGHT + 18, marginTop: 8 }}>
+        {ticks.map((t) => (
+          <View key={t.value} style={[styles.gridLineRow, { bottom: t.bottom + 18 }]}>
+            <Text style={[styles.gridLabel, { color: colors.subText }]}>
+              {t.value}
+            </Text>
+            <View style={[styles.gridLineSep, { backgroundColor: colors.border }]} />
           </View>
         ))}
 
-        <View style={StyleSheet.absoluteFill}>
-          {consumptionChartData.map((d, i) => {
+        <View style={[styles.plotArea, { height: CHART_HEIGHT }]}>
+          {points.map((p, i) => {
             if (i === 0) return null;
-            const prev = consumptionChartData[i - 1];
-            const nx1 = getX(i - 1),
-              ny1 = getY(prev.normal);
-            const nx2 = getX(i),
-              ny2 = getY(d.normal);
-            const nLen = Math.sqrt((nx2 - nx1) ** 2 + (ny2 - ny1) ** 2);
-            const nAngle = Math.atan2(ny2 - ny1, nx2 - nx1) * (180 / Math.PI);
-            const tx1 = getX(i - 1),
-              ty1 = getY(prev.theft);
-            const tx2 = getX(i),
-              ty2 = getY(d.theft);
-            const tLen = Math.sqrt((tx2 - tx1) ** 2 + (ty2 - ty1) ** 2);
-            const tAngle = Math.atan2(ty2 - ty1, tx2 - tx1) * (180 / Math.PI);
+            const prev = points[i - 1];
             return (
-              <View key={i}>
-                <View
-                  style={[
-                    styles.chartLine,
-                    {
-                      left: nx1,
-                      top: ny1,
-                      width: nLen,
-                      backgroundColor: Colors.accent,
-                      transform: [{ rotate: `${nAngle}deg` }],
-                    },
-                  ]}
-                />
-                <View
-                  style={[
-                    styles.chartLine,
-                    {
-                      left: tx1,
-                      top: ty1,
-                      width: tLen,
-                      backgroundColor: Colors.danger,
-                      transform: [{ rotate: `${tAngle}deg` }],
-                    },
-                  ]}
-                />
-              </View>
+              <React.Fragment key={`seg-${p.date}`}>
+                {segment(getX(i - 1), getY(prev.normal), getX(i), getY(p.normal), palette.accent, `n-${i}`)}
+                {segment(getX(i - 1), getY(prev.theft), getX(i), getY(p.theft), palette.danger, `t-${i}`)}
+              </React.Fragment>
             );
           })}
-          {consumptionChartData.map((d, i) => (
-            <View key={`dots-${i}`}>
+          {points.map((p, i) => (
+            <React.Fragment key={`dots-${p.date}`}>
               <View
                 style={[
                   styles.chartDot,
-                  {
-                    left: getX(i) - 4,
-                    top: getY(d.normal) - 4,
-                    backgroundColor: Colors.accent,
-                  },
+                  { left: getX(i) - 4, top: getY(p.normal) - 4, backgroundColor: palette.accent },
                 ]}
               />
               <View
                 style={[
                   styles.chartDot,
-                  {
-                    left: getX(i) - 4,
-                    top: getY(d.theft) - 4,
-                    backgroundColor: Colors.danger,
-                  },
+                  { left: getX(i) - 4, top: getY(p.theft) - 4, backgroundColor: palette.danger },
                 ]}
               />
-            </View>
+            </React.Fragment>
           ))}
         </View>
 
-        <View style={[styles.xLabels, { top: CHART_HEIGHT - 2 }]}>
-          {consumptionChartData.map((d, i) => (
-            <Text key={i} style={styles.xLabel}>
-              {d.date.replace("Feb ", "")}
-            </Text>
-          ))}
-        </View>
+        {points.map((p, i) => (
+          <Text
+            key={`x-${p.date}`}
+            style={[
+              styles.xLabel,
+              { left: getX(i) - 18, top: CHART_HEIGHT + 4, color: colors.subText },
+            ]}
+          >
+            {p.label}
+          </Text>
+        ))}
       </View>
 
       <View style={styles.legendRow}>
         <View style={styles.legendItem}>
-          <View
-            style={[styles.legendDot, { backgroundColor: Colors.danger }]}
-          />
-          <Text style={styles.legendText}>Theft</Text>
+          <View style={[styles.legendDot, { backgroundColor: palette.danger }]} />
+          <Text style={[styles.legendText, { color: colors.subText }]}>Theft</Text>
         </View>
         <View style={styles.legendItem}>
-          <View
-            style={[styles.legendDot, { backgroundColor: Colors.accent }]}
-          />
-          <Text style={styles.legendText}>Normal Consumption</Text>
+          <View style={[styles.legendDot, { backgroundColor: palette.accent }]} />
+          <Text style={[styles.legendText, { color: colors.subText }]}>
+            Normal Consumption
+          </Text>
         </View>
       </View>
     </View>
   );
 };
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
+// ─── Main Screen ─────────────────────────────────────────────
 export default function DashboardScreen() {
   const router = useRouter();
   const { colors } = useAppSettings();
 
-  // ✅ Admin name state
+  const { data, loading, refreshing, error, reload, pullRefresh, retry } =
+    useApi<DashboardResponse>("/api/dashboard");
+  useLiveRefresh(reload); // Firestore mai change => dashboard auto update
+
+  // Admin name Firebase se
   const [adminName, setAdminName] = useState("Admin");
 
-  // ✅ Firebase se admin name fetch karo
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        try {
-          // Admins collection mein uid se dhundo
-          const adminSnap = await getDocs(
-            query(collection(db, "admins"), where("uid", "==", user.uid)),
+      if (!user) return;
+      try {
+        const adminSnap = await getDocs(
+          query(collection(db, "admins"), where("uid", "==", user.uid)),
+        );
+        if (!adminSnap.empty) {
+          const adminData = adminSnap.docs[0].data();
+          setAdminName(
+            adminData.name || adminData.fullName || adminData.email || "Admin",
           );
-
-          if (!adminSnap.empty) {
-            const adminData = adminSnap.docs[0].data();
-            // ✅ 'name' field Firebase se fetch karo
-            // Agar tumhara field alag hai (jaise 'fullName', 'adminName') toh woh likho
-            const fetchedName =
-              adminData.name ||
-              adminData.fullName ||
-              adminData.email ||
-              "Admin";
-            setAdminName(fetchedName);
-          }
-        } catch (error) {
-          console.log("Error fetching admin name:", error);
         }
+      } catch (err) {
+        console.log("Error fetching admin name:", err);
       }
     });
-
     return () => unsubscribe();
   }, []);
+
+  const k = data?.kpis;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={pullRefresh} />
+        }
+      >
         {/* ── Header ── */}
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: colors.card }]}>
           <View>
-            <Text style={styles.headerTitle}>Admin Dashboard</Text>
-            {/* ✅ Firebase se fetch kiya gaya name */}
+            <Text style={[styles.headerTitle, { color: colors.text }]}>
+              Admin Dashboard
+            </Text>
             <Text style={styles.adminName}>{adminName}</Text>
-            <Text style={styles.adminRole}>System Administrator</Text>
+            <Text style={[styles.adminRole, { color: colors.subText }]}>
+              System Administrator
+            </Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.bellBtn}
-            onPress={() => router.push("/src/Admin/notifications")}
-          >
-            <Image
-              source={require("../../../assets/Bell.png")}
-              style={styles.bellImage}
-              resizeMode="contain"
-            />
-            <View style={styles.bellBadge}>
-              <Text style={styles.bellBadgeText}>3</Text>
+          <NotificationBell />
+        </View>
+
+        {loading && !data && (
+          <View style={styles.centerBox}>
+            <ActivityIndicator size="large" color={palette.primary} />
+          </View>
+        )}
+
+        {!loading && !data && (
+          <View style={styles.centerBox}>
+            <Text style={[styles.errorText, { color: colors.text }]}>
+              Dashboard load nahi ho saka
+            </Text>
+            {!!error && (
+              <Text style={[styles.errorDetail, { color: colors.subText }]}>
+                {error}
+              </Text>
+            )}
+            <TouchableOpacity style={styles.retryBtn} onPress={retry}>
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {data && k && (
+          <>
+            {/* ── KPIs ── */}
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Key Performance Indicators
+            </Text>
+            <View style={styles.kpiGrid}>
+              <KPICard
+                imageIndex={0}
+                title="Total Consumers"
+                value={formatNumber(k.totalConsumptionKwh)}
+                subtitle={`${k.consumptionScopeLabel} • ${formatNumber(k.totalConsumers)} consumers`}
+                color={colors.text}
+                badge={changeBadge(k.consumptionChangePct)}
+              />
+              <KPICard
+                imageIndex={1}
+                title="Active Members"
+                value={formatNumber(k.activeMembers)}
+                subtitle={`${k.activePct}% active • ${formatNumber(k.registeredCount)} registered`}
+                color={colors.text}
+              />
+              <KPICard
+                imageIndex={2}
+                title="High-Risk Consumers"
+                value={formatNumber(k.highRiskConsumers)}
+                subtitle={`${k.highRiskPct}% of total`}
+                color={palette.danger}
+              />
+              <KPICard
+                imageIndex={3}
+                title="Theft Cases"
+                value={formatNumber(k.theftCases)}
+                subtitle="Active cases"
+                color={palette.danger}
+              />
+              <KPICard
+                imageIndex={4}
+                title="Revenue Loss"
+                value={k.revenueLossFormatted}
+                subtitle="Estimated monthly"
+                color={colors.text}
+              />
+              <KPICard
+                imageIndex={5}
+                title="Cases Resolved"
+                value={formatNumber(k.casesResolved)}
+                subtitle="This month"
+                color={palette.success}
+                badge={changeBadge(k.casesResolvedChangePct)}
+              />
             </View>
-          </TouchableOpacity>
-        </View>
 
-        {/* ── KPIs ── */}
-        <Text style={styles.sectionTitle}>Key Performance Indicators</Text>
-        <View style={styles.kpiGrid}>
-          <KPICard
-            imageIndex={0}
-            title="Total Consumers"
-            value={dashboardStats.totalConsumers.toLocaleString()}
-            subtitle="kWh this month"
-            color={Colors.text}
-            badge={{ label: "▲ 5.2%", color: Colors.success }}
-          />
-          <KPICard
-            imageIndex={1}
-            title="Active Members"
-            value={dashboardStats.activeMembers.toLocaleString()}
-            subtitle="98.5% active"
-            color={Colors.text}
-          />
-          <KPICard
-            imageIndex={2}
-            title="High-Risk Consumers"
-            value={dashboardStats.highRiskConsumers.toString()}
-            subtitle="1.3% of total"
-            color={Colors.danger}
-            badge={{ label: "▲ 12%", color: Colors.danger }}
-          />
-          <KPICard
-            imageIndex={3}
-            title="Theft Cases"
-            value={dashboardStats.theftCases.toString()}
-            subtitle="Active cases"
-            color={Colors.danger}
-          />
-          <KPICard
-            imageIndex={4}
-            title="Revenue Loss"
-            value={dashboardStats.revenueLoss}
-            subtitle="Estimated monthly"
-            color={Colors.text}
-          />
-          <KPICard
-            imageIndex={5}
-            title="Cases Resolved"
-            value={dashboardStats.casesResolved.toString()}
-            subtitle="This month"
-            color={Colors.success}
-            badge={{ label: "▲ 8%", color: Colors.success }}
-          />
-        </View>
-
-        {/* ── Chart ── */}
-        <Text style={styles.sectionTitle}>Consumption & Theft Analytics</Text>
-        <View style={styles.card}>
-          <MiniChart />
-        </View>
+            {/* ── Chart ── */}
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Consumption & Theft Analytics
+            </Text>
+            <View style={[styles.card, { backgroundColor: colors.card }]}>
+              <MiniChart
+                points={data.chart.points}
+                spikeRatio={data.chart.spikeRatio}
+              />
+            </View>
+          </>
+        )}
 
         {/* ── Quick Actions ── */}
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          Quick Actions
+        </Text>
         <View style={styles.quickGrid}>
           <TouchableOpacity
-            style={styles.quickBtn}
-            onPress={() => router.push("/src/Admin/RisksScreen")}
+            style={[styles.quickBtn, { backgroundColor: colors.card }]}
+            onPress={() => router.push("/src/Admin/RisksScreen" as any)}
           >
-            <Text style={styles.quickBtnText}>View Risk List</Text>
+            <Text style={[styles.quickBtnText, { color: colors.text }]}>
+              View Risk List
+            </Text>
             <Text style={styles.quickArrow}>›</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.quickBtn}
-            onPress={() => router.push("/src/Admin/CasesScreen")}
+            style={[styles.quickBtn, { backgroundColor: colors.card }]}
+            onPress={() => router.push("/src/Admin/CasesScreen" as any)}
           >
-            <Text style={styles.quickBtnText}>Open Cases</Text>
+            <Text style={[styles.quickBtnText, { color: colors.text }]}>
+              Open Cases
+            </Text>
             <Text style={styles.quickArrow}>›</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.quickBtnFull}
-            onPress={() => router.push("/src/Admin/ReportsScreen")}
+            style={[styles.quickBtn, { backgroundColor: colors.card }]}
+            onPress={() => router.push("/src/Admin/ReportsScreen" as any)}
           >
-            <Text style={styles.quickBtnText}>Reports</Text>
+            <Text style={[styles.quickBtnText, { color: colors.text }]}>
+              Reports
+            </Text>
             <Text style={styles.quickArrow}>›</Text>
           </TouchableOpacity>
         </View>
@@ -373,12 +420,11 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
+  safe: { flex: 1 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    backgroundColor: Colors.white,
     padding: 20,
     margin: 16,
     borderRadius: 16,
@@ -388,21 +434,21 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  headerTitle: { fontSize: 22, fontWeight: "700", color: Colors.text },
+  headerTitle: { fontSize: 22, fontWeight: "700" },
   adminName: {
     fontSize: 15,
     fontWeight: "600",
-    color: Colors.primary,
+    color: palette.accent,
     marginTop: 4,
   },
-  adminRole: { fontSize: 12, color: Colors.textSecondary },
+  adminRole: { fontSize: 12 },
   bellBtn: { position: "relative", padding: 4 },
   bellImage: { width: 28, height: 28 },
   bellBadge: {
     position: "absolute",
     top: 0,
     right: 0,
-    backgroundColor: Colors.danger,
+    backgroundColor: palette.danger,
     borderRadius: 8,
     width: 16,
     height: 16,
@@ -410,10 +456,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   bellBadgeText: { color: "#fff", fontSize: 9, fontWeight: "700" },
+
+  centerBox: { alignItems: "center", paddingVertical: 40, paddingHorizontal: 24 },
+  errorText: { fontSize: 15, fontWeight: "700", marginBottom: 6 },
+  errorDetail: { fontSize: 12, textAlign: "center", marginBottom: 14 },
+  retryBtn: {
+    backgroundColor: palette.primary,
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
+  retryText: { color: "#fff", fontWeight: "700" },
+
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: Colors.text,
     marginHorizontal: 16,
     marginBottom: 10,
   },
@@ -425,7 +482,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   kpiCard: {
-    backgroundColor: Colors.white,
     borderRadius: 14,
     padding: 14,
     width: (width - 40) / 2,
@@ -444,10 +500,9 @@ const styles = StyleSheet.create({
   badge: { borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
   badgeText: { fontSize: 10, fontWeight: "600" },
   kpiValue: { fontSize: 22, fontWeight: "700", marginBottom: 2 },
-  kpiTitle: { fontSize: 11, color: Colors.textSecondary, fontWeight: "500" },
-  kpiSubtitle: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
+  kpiTitle: { fontSize: 11, fontWeight: "500" },
+  kpiSubtitle: { fontSize: 10, marginTop: 2 },
   card: {
-    backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 16,
     marginHorizontal: 16,
@@ -457,21 +512,21 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  chartWrapper: {},
   chartHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
-  chartTitle: { fontSize: 15, fontWeight: "700", color: Colors.text },
-  chartSub: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  chartTitle: { fontSize: 15, fontWeight: "700" },
+  chartSub: { fontSize: 11, marginTop: 2 },
   spikeTag: {
     backgroundColor: "#FF3B3020",
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  spikeTagText: { color: Colors.danger, fontSize: 11, fontWeight: "600" },
+  spikeTagText: { color: palette.danger, fontSize: 11, fontWeight: "600" },
+  plotArea: { position: "absolute", left: 0, right: 0, top: 0 },
   gridLineRow: {
     position: "absolute",
     left: 0,
@@ -479,13 +534,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  gridLabel: { fontSize: 9, color: Colors.textSecondary, width: 28 },
-  gridLineSep: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.border,
-    opacity: 0.5,
-  },
+  gridLabel: { fontSize: 9, width: 30 },
+  gridLineSep: { flex: 1, height: 1, opacity: 0.6 },
   chartLine: {
     position: "absolute",
     height: 2,
@@ -500,21 +550,18 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#fff",
   },
-  xLabels: {
+  xLabel: {
     position: "absolute",
-    left: 28,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "space-between",
+    width: 36,
+    textAlign: "center",
+    fontSize: 9,
   },
-  xLabel: { fontSize: 9, color: Colors.textSecondary },
-  legendRow: { flexDirection: "row", gap: 16, marginTop: 24 },
+  legendRow: { flexDirection: "row", gap: 16, marginTop: 12 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendText: { fontSize: 12, color: Colors.textSecondary },
+  legendText: { fontSize: 12 },
   quickGrid: { paddingHorizontal: 16, gap: 10 },
   quickBtn: {
-    backgroundColor: Colors.white,
     borderRadius: 14,
     padding: 16,
     flexDirection: "row",
@@ -525,18 +572,6 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  quickBtnFull: {
-    backgroundColor: Colors.white,
-    borderRadius: 14,
-    padding: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  quickBtnText: { fontSize: 14, fontWeight: "600", color: Colors.text },
-  quickArrow: { fontSize: 20, color: Colors.primary },
+  quickBtnText: { fontSize: 14, fontWeight: "600" },
+  quickArrow: { fontSize: 20, color: palette.primary },
 });

@@ -1,12 +1,12 @@
-import { Ionicons } from "@expo/vector-icons";
+// app/src/Admin/escalate.tsx
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Platform,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,34 +14,22 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
-// Firebase imports — adjust the path to match your project setup
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  serverTimestamp,
-  updateDoc,
-} from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { db, storage } from "../../../firebaseConfig"; // <-- update this path
+import { Colors, getCaseStatusColor, getRiskColor } from "../../../constants/Colors";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
+import { getStrings } from "../../../constants/caseScreensStrings";
+import { escalateCase, useCaseDetail } from "../../../hooks/useCasesApi";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type EscalationLevel = "Supervisor" | "Department Head" | "Legal / Enforcement";
+const ESCALATION_LEVELS: EscalationLevel[] = ["Supervisor", "Department Head", "Legal / Enforcement"];
 
-interface CaseSummary {
-  caseId: string;
-  consumerId: string;
-  currentStatus: string;
-  riskLevel: "High" | "Medium" | "Low";
-  assignedInspector: string;
-}
-
-interface DropdownOption {
-  label: string;
-  value: string;
-}
+type Reason = "High Risk Confirmed" | "Consumer Uncooperative" | "Evidence of Organized Theft" | "Repeat Offender" | "Other";
+const REASONS: Reason[] = [
+  "High Risk Confirmed",
+  "Consumer Uncooperative",
+  "Evidence of Organized Theft",
+  "Repeat Offender",
+  "Other",
+];
 
 interface UploadedFile {
   uri: string;
@@ -50,441 +38,281 @@ interface UploadedFile {
   mimeType?: string;
 }
 
-// ─── Dropdown Component ───────────────────────────────────────────────────────
-
-const Dropdown: React.FC<{
+function Dropdown<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  options: T[];
+  value: T | "";
+  onChange: (v: T) => void;
   placeholder: string;
-  options: DropdownOption[];
-  selected: string;
-  onSelect: (value: string) => void;
-}> = ({ placeholder, options, selected, onSelect }) => {
+}) {
   const [open, setOpen] = useState(false);
-  const selectedLabel = options.find((o) => o.value === selected)?.label;
-
   return (
-    <View style={styles.dropdownWrapper}>
-      <TouchableOpacity
-        style={styles.dropdownTrigger}
-        onPress={() => setOpen((p) => !p)}
-        activeOpacity={0.8}
-      >
-        <Text
-          style={[
-            styles.dropdownTriggerText,
-            !selectedLabel && styles.dropdownPlaceholder,
-          ]}
-        >
-          {selectedLabel ?? placeholder}
-        </Text>
-        <Ionicons
-          name={open ? "chevron-up" : "chevron-down"}
-          size={18}
-          color="#64748B"
-        />
+    <View style={dd.wrap}>
+      <Text style={dd.label}>{label} *</Text>
+      <TouchableOpacity style={dd.btn} onPress={() => setOpen(!open)} activeOpacity={0.8}>
+        <Text style={[dd.btnText, !value && { color: Colors.textSecondary }]}>{value || placeholder}</Text>
+        <Text style={dd.arrow}>{open ? "▲" : "▼"}</Text>
       </TouchableOpacity>
-
       {open && (
-        <View style={styles.dropdownList}>
+        <View style={dd.menu}>
           {options.map((opt) => (
             <TouchableOpacity
-              key={opt.value}
-              style={[
-                styles.dropdownItem,
-                opt.value === selected && styles.dropdownItemSelected,
-              ]}
+              key={opt}
+              style={[dd.item, value === opt && dd.itemActive]}
               onPress={() => {
-                onSelect(opt.value);
+                onChange(opt);
                 setOpen(false);
               }}
             >
-              <Text
-                style={[
-                  styles.dropdownItemText,
-                  opt.value === selected && styles.dropdownItemTextSelected,
-                ]}
-              >
-                {opt.label}
-              </Text>
+              <Text style={[dd.itemText, value === opt && dd.itemTextActive]}>{opt}</Text>
             </TouchableOpacity>
           ))}
         </View>
       )}
     </View>
   );
-};
+}
 
-// ─── Risk Badge ───────────────────────────────────────────────────────────────
-
-const RiskBadge: React.FC<{ level: string }> = ({ level }) => {
-  const color =
-    level === "High" ? "#EF4444" : level === "Medium" ? "#F97316" : "#22C55E";
-  const bg =
-    level === "High" ? "#FEE2E2" : level === "Medium" ? "#FFEDD5" : "#DCFCE7";
-
-  return (
-    <View style={[styles.riskBadge, { backgroundColor: bg }]}>
-      {/* Risk icon — replace with your own image using <Image source={require('../assets/risk-icon.png')} /> */}
-      <Ionicons name="warning" size={12} color={color} />
-      <Text style={[styles.riskBadgeText, { color }]}>{level}</Text>
-    </View>
-  );
-};
-
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+const dd = StyleSheet.create({
+  wrap: { marginBottom: 16 },
+  label: { fontSize: 13, fontWeight: "600", color: Colors.text, marginBottom: 6 },
+  btn: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
+  btnText: { fontSize: 14, color: Colors.text },
+  arrow: { fontSize: 11, color: Colors.textSecondary },
+  menu: {
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    marginTop: 4,
+    overflow: "hidden",
+    zIndex: 99,
+  },
+  item: { paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  itemActive: { backgroundColor: Colors.primary + "12" },
+  itemText: { fontSize: 14, color: Colors.text },
+  itemTextActive: { color: Colors.primary, fontWeight: "600" },
+});
 
 export default function EscalateCaseScreen() {
-  const { colors } = useAppSettings();
   const router = useRouter();
-  const { caseId } = useLocalSearchParams<{ caseId: string }>();
+  const { colors, language } = useAppSettings();
+  const S = getStrings(language).escalate;
 
-  // Case summary
-  const [caseSummary, setCaseSummary] = useState<CaseSummary | null>(null);
-  const [loadingCase, setLoadingCase] = useState(true);
+  const params = useLocalSearchParams();
+  const rawId = params.caseId as string | string[] | undefined;
+  const caseId = Array.isArray(rawId) ? rawId[0] : rawId ?? null;
 
-  // Escalation options from Firebase
-  const [escalationLevels, setEscalationLevels] = useState<DropdownOption[]>(
-    [],
-  );
-  const [escalationReasons, setEscalationReasons] = useState<DropdownOption[]>(
-    [],
-  );
+  const { caseItem, loading } = useCaseDetail(caseId);
 
-  // Form state
-  const [selectedLevel, setSelectedLevel] = useState("");
-  const [selectedReason, setSelectedReason] = useState("");
+  const [escalationLevel, setEscalationLevel] = useState<EscalationLevel | "">("");
+  const [reason, setReason] = useState<Reason | "">("");
   const [description, setDescription] = useState("");
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-
-  // UI state
+  const [files, setFiles] = useState<UploadedFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  // ── Fetch case summary ──────────────────────────────────────────────────────
-  useEffect(() => {
-    const fetchCase = async () => {
-      try {
-        const id = caseId ?? "CASE003"; // fallback for dev
-        const snap = await getDoc(doc(db, "cases", id));
-        if (snap.exists()) {
-          setCaseSummary(snap.data() as CaseSummary);
-        }
-      } catch (e) {
-        console.error("Failed to fetch case:", e);
-      } finally {
-        setLoadingCase(false);
-      }
-    };
-    fetchCase();
-  }, [caseId]);
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace("/src/Admin/CasesScreen" as any));
 
-  // ── Fetch escalation options ────────────────────────────────────────────────
-  useEffect(() => {
-    const fetchOptions = async () => {
-      try {
-        const levelsSnap = await getDocs(collection(db, "escalation_levels"));
-        setEscalationLevels(
-          levelsSnap.docs.map((d) => ({
-            label: d.data().label as string,
-            value: d.id,
-          })),
-        );
-
-        const reasonsSnap = await getDocs(collection(db, "escalation_reasons"));
-        setEscalationReasons(
-          reasonsSnap.docs.map((d) => ({
-            label: d.data().label as string,
-            value: d.id,
-          })),
-        );
-      } catch (e) {
-        console.error("Failed to fetch escalation options:", e);
-      }
-    };
-    fetchOptions();
-  }, []);
-
-  // ── Image picker ────────────────────────────────────────────────────────────
-  const handleUploadImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        "Permission Required",
-        "Please allow access to your photo library.",
-      );
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Required", "Please allow access to your photo library.");
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: false,
+      allowsMultipleSelection: true,
       quality: 0.8,
     });
-
-    if (!result.canceled && result.assets.length > 0) {
-      const asset = result.assets[0];
-      setUploadedFiles((prev) => [
+    if (!result.canceled) {
+      setFiles((prev) => [
         ...prev,
-        {
-          uri: asset.uri,
-          name: asset.fileName ?? `image_${Date.now()}.jpg`,
-          type: "image",
-          mimeType: asset.mimeType ?? "image/jpeg",
-        },
+        ...result.assets.map((a) => ({
+          uri: a.uri,
+          name: a.fileName || `image_${Date.now()}.jpg`,
+          type: "image" as const,
+          mimeType: a.mimeType || "image/jpeg",
+        })),
       ]);
     }
   };
 
-  // ── Document picker ─────────────────────────────────────────────────────────
-  const handleUploadDocument = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        copyToCacheDirectory: true,
-      });
+  const pickDocument = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true, multiple: true });
+    if (!result.canceled) {
+      setFiles((prev) => [
+        ...prev,
+        ...result.assets.map((a) => ({
+          uri: a.uri,
+          name: a.name,
+          type: "document" as const,
+          mimeType: a.mimeType || "application/octet-stream",
+        })),
+      ]);
+    }
+  };
 
-      if (!result.canceled && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setUploadedFiles((prev) => [
-          ...prev,
-          {
-            uri: asset.uri,
-            name: asset.name,
-            type: "document",
-            mimeType: asset.mimeType ?? "application/octet-stream",
+  const removeFile = (idx: number) => setFiles((prev) => prev.filter((_, i) => i !== idx));
+
+  const handleConfirm = () => {
+    if (!caseId) return;
+    if (!escalationLevel || !reason || !description.trim()) {
+      Alert.alert(S.missingFieldsTitle, S.missingFieldsMsg);
+      return;
+    }
+    Alert.alert(
+      S.confirmTitle,
+      S.confirmMsg,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Escalate",
+          style: "destructive",
+          onPress: async () => {
+            setSubmitting(true);
+            try {
+              await escalateCase(caseId, {
+                escalationLevel,
+                reason,
+                description: description.trim(),
+                files,
+              });
+              // Backend: case ka riskLevel/priority update karta hai, evidence
+              // save karta hai, aur consumer ko escalation ki notification bhejta hai.
+              Alert.alert(S.escalatedTitle, S.escalatedMsg, [
+                { text: "OK", onPress: () => router.back() },
+              ]);
+            } catch (err: any) {
+              Alert.alert(S.errorTitle, err.message);
+            } finally {
+              setSubmitting(false);
+            }
           },
-        ]);
-      }
-    } catch {
-      // ← remove (e)
-      Alert.alert("Error", "Could not pick document.");
-    }
-  };
-
-  // ── Remove file ─────────────────────────────────────────────────────────────
-  const removeFile = (index: number) => {
-    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  // ── Upload a single file to Firebase Storage ────────────────────────────────
-  const uploadFileToStorage = async (
-    file: UploadedFile,
-    caseDocId: string,
-  ): Promise<string> => {
-    const response = await fetch(file.uri);
-    const blob = await response.blob();
-    const fileRef = ref(
-      storage,
-      `escalations/${caseDocId}/${Date.now()}_${file.name}`,
+        },
+      ],
     );
-    await uploadBytes(fileRef, blob, { contentType: file.mimeType });
-    return await getDownloadURL(fileRef);
   };
 
-  // ── Confirm escalation ──────────────────────────────────────────────────────
-  const handleConfirmEscalation = async () => {
-    if (!selectedLevel) {
-      Alert.alert("Required", "Please select an escalation level.");
-      return;
-    }
-    if (!selectedReason) {
-      Alert.alert("Required", "Please select a reason for escalation.");
-      return;
-    }
-    if (!description.trim()) {
-      Alert.alert("Required", "Please provide a description.");
-      return;
-    }
+  if (loading || !caseItem) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
-    setSubmitting(true);
-    try {
-      const id = caseId ?? "CASE003";
+  const statusColor = getCaseStatusColor(caseItem.status);
+  const riskColor = getRiskColor(caseItem.riskLevel);
 
-      // Upload files
-      const fileUrls: string[] = [];
-      for (const file of uploadedFiles) {
-        const url = await uploadFileToStorage(file, id);
-        fileUrls.push(url);
-      }
-
-      // Update Firestore document
-      await updateDoc(doc(db, "cases", id), {
-        escalated: true,
-        escalationLevel: selectedLevel,
-        escalationReason: selectedReason,
-        escalationDescription: description.trim(),
-        escalationFiles: fileUrls,
-        escalationTimestamp: serverTimestamp(),
-        currentStatus: "Escalated",
-      });
-
-      Alert.alert(
-        "Case Escalated",
-        "The case has been successfully escalated.",
-        [{ text: "OK", onPress: () => router.back() }],
-      );
-    } catch (e) {
-      console.error("Escalation failed:", e);
-      Alert.alert("Error", "Failed to escalate case. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // ── Cancel ──────────────────────────────────────────────────────────────────
-  const handleCancel = () => {
-    router.back();
-  };
-
-  // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          {/* Replace the Ionicons below with your custom back icon image:
-              <Image source={require('../assets/back-arrow.png')} style={styles.backIcon} /> */}
-          <Ionicons name="arrow-back" size={22} color="#1E293B" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Escalate Case</Text>
-        <View style={{ width: 32 }} />
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* ── Case Summary ── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Case Summary</Text>
-            <Text style={styles.cardSubtitle}>
-              Review case details before escalation
-            </Text>
-          </View>
-
-          {loadingCase ? (
-            <ActivityIndicator color="#E63946" style={{ marginVertical: 16 }} />
-          ) : caseSummary ? (
-            <View style={styles.summaryTable}>
-              <SummaryRow label="Case ID" value={caseSummary.caseId} />
-              <SummaryRow label="Consumer ID" value={caseSummary.consumerId} />
-              <SummaryRow
-                label="Current Status"
-                value={caseSummary.currentStatus}
-              />
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Risk Level</Text>
-                <RiskBadge level={caseSummary.riskLevel} />
-              </View>
-              <SummaryRow
-                label="Assigned Inspector"
-                value={caseSummary.assignedInspector}
-                last
-              />
-            </View>
-          ) : (
-            <Text style={styles.errorText}>Could not load case details.</Text>
-          )}
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <View style={[styles.header, { backgroundColor: colors.card }]}>
+          <TouchableOpacity onPress={goBack} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Text style={styles.backArrow}>←</Text>
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>{S.title}</Text>
+          <View style={{ width: 40 }} />
         </View>
 
-        {/* ── Escalation Details ── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Escalation Details</Text>
-            <Text style={styles.cardSubtitle}>
-              Provide escalation justification
-            </Text>
+        {/* Case Summary */}
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>{S.caseSummary}</Text>
+          <Text style={[styles.cardSub, { color: colors.subText }]}>{S.reviewBeforeEscalation}</Text>
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: colors.subText }]}>{S.caseId}</Text>
+            <Text style={[styles.summaryValue, { color: colors.text }]}>{caseItem.caseNumber}</Text>
           </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Escalation Level<Text style={styles.required}> *</Text>
-            </Text>
-            <Dropdown
-              placeholder="Select escalation level"
-              options={escalationLevels}
-              selected={selectedLevel}
-              onSelect={setSelectedLevel}
-            />
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: colors.subText }]}>{S.consumerId}</Text>
+            <Text style={[styles.summaryValue, { color: colors.text }]}>{caseItem.consumerId}</Text>
           </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Reason for Escalation<Text style={styles.required}> *</Text>
-            </Text>
-            <Dropdown
-              placeholder="Select reason"
-              options={escalationReasons}
-              selected={selectedReason}
-              onSelect={setSelectedReason}
-            />
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: colors.subText }]}>{S.currentStatus}</Text>
+            <View style={[styles.badge, { backgroundColor: statusColor + "20", borderColor: statusColor, borderWidth: 1 }]}>
+              <Text style={[styles.badgeText, { color: statusColor }]}>{caseItem.status}</Text>
+            </View>
           </View>
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: colors.subText }]}>{S.riskLevel}</Text>
+            <View style={[styles.badge, { backgroundColor: riskColor + "20", borderColor: riskColor, borderWidth: 1 }]}>
+              <Text style={[styles.badgeText, { color: riskColor }]}>{caseItem.riskLevel}</Text>
+            </View>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: colors.subText }]}>{S.assignedInspector}</Text>
+            <Text style={[styles.summaryValue, { color: colors.text }]}>{caseItem.inspector || "Unassigned"}</Text>
+          </View>
+        </View>
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Description<Text style={styles.required}> *</Text>
-            </Text>
+        {/* Escalation Details */}
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>{S.escalationDetails}</Text>
+          <Text style={[styles.cardSub, { color: colors.subText }]}>{S.provideJustification}</Text>
+
+          <Dropdown
+            label={S.escalationLevel}
+            options={ESCALATION_LEVELS}
+            value={escalationLevel}
+            onChange={setEscalationLevel}
+            placeholder={S.selectLevel}
+          />
+          <Dropdown label={S.reasonForEscalation} options={REASONS} value={reason} onChange={setReason} placeholder={S.selectReason} />
+
+          <View style={styles.fieldWrap}>
+            <Text style={dd.label}>{S.description}</Text>
             <TextInput
-              style={styles.textArea}
-              placeholder="Provide comprehensive detail for escalation. Include specific details, evidence, and impact assessment."
-              placeholderTextColor="#94A3B8"
-              multiline
-              numberOfLines={5}
-              textAlignVertical="top"
+              style={[styles.input, styles.textArea]}
+              placeholder={S.ph_description}
+              placeholderTextColor={Colors.textSecondary}
               value={description}
               onChangeText={setDescription}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
             />
           </View>
 
-          {/* Upload Buttons */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Attach Additional Evidence{" "}
-              <Text style={styles.optional}>(Optional)</Text>
-            </Text>
-            <View style={styles.uploadRow}>
-              <TouchableOpacity
-                style={styles.uploadButton}
-                onPress={handleUploadImage}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="image-outline" size={16} color="#E63946" />
-                <Text style={styles.uploadButtonText}>Upload Image</Text>
+          <View style={styles.uploadSection}>
+            <Text style={dd.label}>{S.attachAdditional}</Text>
+            <View style={styles.uploadBtnRow}>
+              <TouchableOpacity style={styles.uploadBtn} onPress={pickImage} activeOpacity={0.8}>
+                <Text style={styles.uploadBtnIcon}>🖼</Text>
+                <Text style={styles.uploadBtnText}>{S.uploadImage}</Text>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.uploadButton}
-                onPress={handleUploadDocument}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="document-outline" size={16} color="#E63946" />
-                <Text style={styles.uploadButtonText}>Upload Document</Text>
+              <TouchableOpacity style={[styles.uploadBtn, styles.uploadBtnDoc]} onPress={pickDocument} activeOpacity={0.8}>
+                <Text style={styles.uploadBtnIcon}>📄</Text>
+                <Text style={[styles.uploadBtnText, { color: Colors.primary }]}>{S.uploadDocument}</Text>
               </TouchableOpacity>
             </View>
-
-            {/* File list */}
-            {uploadedFiles.length > 0 && (
+            {files.length > 0 && (
               <View style={styles.fileList}>
-                {uploadedFiles.map((file, index) => (
-                  <View key={index} style={styles.fileItem}>
-                    <Ionicons
-                      name={
-                        file.type === "image"
-                          ? "image-outline"
-                          : "document-outline"
-                      }
-                      size={16}
-                      color="#64748B"
-                    />
-                    <Text style={styles.fileName} numberOfLines={1}>
-                      {file.name}
+                {files.map((f, i) => (
+                  <View key={i} style={styles.fileItem}>
+                    <Text style={styles.fileIcon}>{f.type === "image" ? "🖼" : "📄"}</Text>
+                    <Text style={[styles.fileName, { color: colors.text }]} numberOfLines={1}>
+                      {f.name}
                     </Text>
-                    <TouchableOpacity onPress={() => removeFile(index)}>
-                      <Ionicons name="close-circle" size={18} color="#94A3B8" />
+                    <TouchableOpacity onPress={() => removeFile(i)} style={styles.removeBtn}>
+                      <Text style={styles.removeBtnText}>✕</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -493,372 +321,166 @@ export default function EscalateCaseScreen() {
           </View>
         </View>
 
-        {/* ── Important Notice ── */}
-        <View style={styles.noticeCard}>
-          <Ionicons name="warning-outline" size={18} color="#D97706" />
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={styles.noticeTitle}>Important Notice</Text>
+        {/* Important Notice */}
+        <View style={styles.noticeBox}>
+          <Text style={styles.noticeIcon}>⚠️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.noticeTitle}>{S.importantNotice}</Text>
             <Text style={styles.noticeText}>
-              Escalated cases will be reviewed by higher authority and cannot be
-              reversed.
+              {S.noticeText}
             </Text>
           </View>
         </View>
 
-        {/* ── Buttons ── */}
-        <TouchableOpacity
-          style={[styles.confirmButton, submitting && styles.buttonDisabled]}
-          onPress={handleConfirmEscalation}
-          activeOpacity={0.85}
-          disabled={submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.confirmButtonText}>Confirm Escalation</Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.form}>
+          <TouchableOpacity
+            style={[styles.confirmBtn, submitting && styles.submitBtnDisabled]}
+            onPress={handleConfirm}
+            activeOpacity={0.85}
+            disabled={submitting}
+          >
+            {submitting ? (
+              <View style={styles.submitLoading}>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text style={styles.confirmBtnText}>{S.escalating}</Text>
+              </View>
+            ) : (
+              <Text style={styles.confirmBtnText}>{S.confirmEscalation}</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.cancelBtn} onPress={goBack} disabled={submitting}>
+            <Text style={[styles.cancelBtnText, { color: colors.subText }]}>{S.cancel}</Text>
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={styles.cancelButton}
-          onPress={handleCancel}
-          activeOpacity={0.8}
-          disabled={submitting}
-        >
-          <Text style={styles.cancelButtonText}>Cancel</Text>
-        </TouchableOpacity>
-
-        <View style={{ height: 32 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-// ─── Helper: Summary Row ──────────────────────────────────────────────────────
-
-const SummaryRow: React.FC<{
-  label: string;
-  value: string;
-  last?: boolean;
-}> = ({ label, value, last }) => (
-  <View style={[styles.summaryRow, last && { borderBottomWidth: 0 }]}>
-    <Text style={styles.summaryLabel}>{label}</Text>
-    <Text style={styles.summaryValue}>{value}</Text>
-  </View>
-);
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F1F5F9",
-  },
-
-  // Header
+  safe: { flex: 1, backgroundColor: Colors.bg },
+  loadingBox: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#FFFFFF",
-    paddingTop: Platform.OS === "ios" ? 56 : 20,
-    paddingBottom: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  backButton: {
-    width: 32,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backIcon: {
-    width: 22,
-    height: 22,
-    resizeMode: "contain",
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#1E293B",
-    letterSpacing: 0.2,
-  },
-
-  scrollContent: {
+    backgroundColor: Colors.white,
     padding: 16,
-  },
-
-  // Cards
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 14,
-    elevation: 1,
+    margin: 16,
+    marginTop: 40,
+    borderRadius: 16,
     shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  cardHeader: {
-    marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+  backBtn: { padding: 6 },
+  backArrow: { fontSize: 22, color: Colors.primary, fontWeight: "600" },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
+  card: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1E293B",
-    marginBottom: 2,
-  },
-  cardSubtitle: {
-    fontSize: 12,
-    color: "#94A3B8",
-  },
-
-  // Summary table
-  summaryTable: {
-    gap: 0,
-  },
+  cardTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
+  cardSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2, marginBottom: 14 },
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#F8FAFC",
+    borderBottomColor: Colors.border,
   },
-  summaryLabel: {
-    fontSize: 13,
-    color: "#64748B",
-    flex: 1,
-  },
-  summaryValue: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#1E293B",
-    textAlign: "right",
-    flexShrink: 1,
-    marginLeft: 8,
-  },
-
-  // Risk badge
-  riskBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  riskBadgeText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  // Form fields
-  fieldGroup: {
-    marginBottom: 16,
-  },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 8,
-  },
-  required: {
-    color: "#E63946",
-  },
-  optional: {
-    color: "#94A3B8",
-    fontWeight: "400",
-  },
-
-  // Dropdown
-  dropdownWrapper: {
-    position: "relative",
-    zIndex: 10,
-  },
-  dropdownTrigger: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    borderRadius: 10,
+  summaryLabel: { fontSize: 13, color: Colors.textSecondary },
+  summaryValue: { fontSize: 13, fontWeight: "600", color: Colors.text },
+  badge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 3 },
+  badgeText: { fontSize: 11, fontWeight: "600" },
+  fieldWrap: { marginBottom: 16 },
+  input: {
+    backgroundColor: Colors.bg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    backgroundColor: "#FAFAFA",
-  },
-  dropdownTriggerText: {
     fontSize: 14,
-    color: "#1E293B",
+    color: Colors.text,
+  },
+  textArea: { height: 110, paddingTop: 12 },
+  uploadSection: { marginTop: 4 },
+  uploadBtnRow: { flexDirection: "row", gap: 12, marginTop: 4 },
+  uploadBtn: {
     flex: 1,
-  },
-  dropdownPlaceholder: {
-    color: "#94A3B8",
-  },
-  dropdownList: {
-    position: "absolute",
-    top: "100%",
-    left: 0,
-    right: 0,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    borderRadius: 10,
-    marginTop: 4,
-    zIndex: 999,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    overflow: "hidden",
-  },
-  dropdownItem: {
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F8FAFC",
-  },
-  dropdownItemSelected: {
-    backgroundColor: "#FFF1F2",
-  },
-  dropdownItemText: {
-    fontSize: 14,
-    color: "#334155",
-  },
-  dropdownItemTextSelected: {
-    color: "#E63946",
-    fontWeight: "600",
-  },
-
-  // Text area
-  textArea: {
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 13,
-    color: "#1E293B",
-    backgroundColor: "#FAFAFA",
-    minHeight: 110,
-    lineHeight: 20,
-  },
-
-  // Upload
-  uploadRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  uploadButton: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 6,
-    borderWidth: 1.5,
-    borderColor: "#E63946",
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: "#FFF1F2",
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 13,
   },
-  uploadButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#E63946",
-  },
-  fileList: {
-    marginTop: 10,
-    gap: 6,
-  },
+  uploadBtnDoc: { backgroundColor: Colors.primary + "15", borderWidth: 1, borderColor: Colors.primary },
+  uploadBtnIcon: { fontSize: 16 },
+  uploadBtnText: { fontSize: 13, fontWeight: "600", color: "#fff" },
+  fileList: { marginTop: 12, gap: 8 },
   fileItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: "#F8FAFC",
-    borderRadius: 8,
+    backgroundColor: Colors.bg,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: Colors.border,
+    gap: 10,
   },
-  fileName: {
-    flex: 1,
-    fontSize: 12,
-    color: "#475569",
-  },
-
-  // Notice
-  noticeCard: {
+  fileIcon: { fontSize: 18 },
+  fileName: { flex: 1, fontSize: 13, color: Colors.text },
+  removeBtn: { padding: 4 },
+  removeBtnText: { fontSize: 14, color: Colors.danger, fontWeight: "600" },
+  noticeBox: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: "#FFFBEB",
-    borderWidth: 1.5,
-    borderColor: "#FDE68A",
-    borderRadius: 12,
+    gap: 10,
+    backgroundColor: "#FFF4E8",
+    borderRadius: 14,
     padding: 14,
-    marginBottom: 20,
+    marginHorizontal: 16,
+    marginBottom: 16,
   },
-  noticeTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#92400E",
-    marginBottom: 3,
-  },
-  noticeText: {
-    fontSize: 12,
-    color: "#78350F",
-    lineHeight: 18,
-  },
-
-  // Buttons
-  confirmButton: {
-    backgroundColor: "#E63946",
-    borderRadius: 12,
-    paddingVertical: 15,
+  noticeIcon: { fontSize: 18 },
+  noticeTitle: { fontSize: 13, fontWeight: "700", color: Colors.text, marginBottom: 2 },
+  noticeText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 17 },
+  form: { paddingHorizontal: 16 },
+  confirmBtn: {
+    backgroundColor: Colors.danger,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: "center",
-    marginBottom: 10,
-    elevation: 2,
-    shadowColor: "#E63946",
+    marginBottom: 12,
+    shadowColor: Colors.danger,
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 4,
   },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  confirmButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
-  cancelButton: {
-    borderRadius: 12,
-    paddingVertical: 15,
+  submitBtnDisabled: { opacity: 0.7 },
+  submitLoading: { flexDirection: "row", alignItems: "center", gap: 10 },
+  confirmBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  cancelBtn: {
+    borderRadius: 14,
+    paddingVertical: 14,
     alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#CBD5E1",
-    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
   },
-  cancelButtonText: {
-    color: "#64748B",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-
-  errorText: {
-    color: "#EF4444",
-    fontSize: 13,
-    textAlign: "center",
-    paddingVertical: 8,
-  },
+  cancelBtnText: { fontSize: 15, fontWeight: "600", color: Colors.textSecondary },
 });

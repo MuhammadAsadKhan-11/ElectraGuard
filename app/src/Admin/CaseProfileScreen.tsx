@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from "react";
+// app/src/Admin/CaseProfileScreen.tsx
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Modal,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -10,122 +13,88 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  Colors,
-  getCaseStatusColor,
-  getRiskColor,
-} from "../../../constants/Colors";
-import { Case } from "../../../types";
+import { Colors, getCaseStatusColor, getRiskColor } from "../../../constants/Colors";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
+import { getStrings } from "../../../constants/caseScreensStrings";
+import {
+  assignInspector,
+  closeCase,
+  useCaseDetail,
+  useInspectors,
+} from "../../../hooks/useCasesApi";
 
-// Firebase
-import { onValue, push, ref, update } from "firebase/database";
-import { mockInspectors } from "../../../data/mockData"; // or fetch from Firebase
-import { rtdb as db } from "../../../firebaseConfig";
+export default function CaseProfileScreen() {
+  const router = useRouter();
+  const { colors, language } = useAppSettings();
+  const S = getStrings(language).caseProfile;
 
-interface Props {
-  navigation: any;
-  route: { params: { caseId: string } };
-}
+  const params = useLocalSearchParams();
+  const rawId = params.caseId as string | string[] | undefined;
+  const caseId = Array.isArray(rawId) ? rawId[0] : rawId ?? null;
 
-export default function CaseProfileScreen({ navigation, route }: Props) {
-  const { colors } = useAppSettings();
-  const { caseId } = route.params;
-  const [caseItem, setCaseItem] = useState<Case | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { caseItem, loading, refreshing, error, pullRefresh, reload } = useCaseDetail(caseId);
+  const { inspectors } = useInspectors();
+
   const [assignModal, setAssignModal] = useState(false);
-  const [assignedInspector, setAssignedInspector] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  // ── Real-time listener for this case ──
-  useEffect(() => {
-    const caseRef = ref(db, `cases/${caseId}`);
-    const unsubscribe = onValue(caseRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setCaseItem({ id: caseId, ...data });
-        setAssignedInspector(data.inspector || "");
-      }
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, [caseId]);
+  // ── Fix: use router.canGoBack()/back() (works under Expo Router,
+  // unlike the old navigation.goBack() which had no `navigation` prop here
+  // and silently failed to render/act — that was the missing back-arrow bug).
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/src/Admin/CasesScreen" as any);
+  };
 
-  // ── Assign Inspector ──
   const handleAssign = async (inspectorName: string) => {
-    if (!caseItem) return;
+    if (!caseId) return;
     try {
-      const now = new Date();
-      await update(ref(db, `cases/${caseId}`), {
-        inspector: inspectorName,
-        status: "In Progress",
-      });
-      // Add timeline entry
-      await push(ref(db, `cases/${caseId}/timeline`), {
-        action: `Case assigned to ${inspectorName}`,
-        date: now.toISOString().split("T")[0],
-        time: now.toTimeString().slice(0, 5),
-      });
-      setAssignedInspector(inspectorName);
+      setBusy(true);
+      await assignInspector(caseId, inspectorName);
       setAssignModal(false);
-      Alert.alert("✅ Assigned", `Case assigned to ${inspectorName}`);
+      await reload();
+      Alert.alert(S.assignedTitle, S.assignedMsg(inspectorName));
     } catch (err: any) {
-      Alert.alert("Error", err.message);
+      Alert.alert(S.error, err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
-  // ── Close Case ──
   const handleClose = () => {
-    Alert.alert("Close Case", "Are you sure you want to close this case?", [
-      { text: "Cancel", style: "cancel" },
+    if (!caseId) return;
+    Alert.alert(S.closeConfirmTitle, S.closeConfirmMsg, [
+      { text: S.cancel, style: "cancel" },
       {
-        text: "Close",
+        text: S.close,
         style: "destructive",
         onPress: async () => {
           try {
-            const now = new Date();
-            await update(ref(db, `cases/${caseId}`), { status: "Closed" });
-            await push(ref(db, `cases/${caseId}/timeline`), {
-              action: "Case closed",
-              date: now.toISOString().split("T")[0],
-              time: now.toTimeString().slice(0, 5),
-            });
-            navigation.goBack();
+            setBusy(true);
+            await closeCase(caseId);
+            // Backend marks status "Closed" AND notifies the consumer.
+            router.back();
           } catch (err: any) {
-            Alert.alert("Error", err.message);
+            Alert.alert(S.error, err.message);
+          } finally {
+            setBusy(false);
           }
         },
       },
     ]);
   };
 
-  // ── Escalate ──
-  const handleEscalate = async () => {
-    try {
-      const now = new Date();
-      await update(ref(db, `cases/${caseId}`), {
-        riskLevel: "Critical",
-        priority: "Urgent",
-      });
-      await push(ref(db, `cases/${caseId}/timeline`), {
-        action: "Case escalated to department head",
-        date: now.toISOString().split("T")[0],
-        time: now.toTimeString().slice(0, 5),
-      });
-      Alert.alert(
-        "⬆ Escalated",
-        "Case has been escalated to the department head.",
-      );
-    } catch (err: any) {
-      Alert.alert("Error", err.message);
-    }
+  const handleEscalate = () => {
+    if (!caseId) return;
+    router.push({ pathname: "/src/Admin/escalate", params: { caseId } } as any);
   };
 
-  if (loading) {
+  if (loading && !caseItem) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Loading case…</Text>
+          <Text style={styles.loadingText}>{S.loadingCase}</Text>
         </View>
       </SafeAreaView>
     );
@@ -135,14 +104,9 @@ export default function CaseProfileScreen({ navigation, route }: Props) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
         <View style={styles.loadingBox}>
-          <Text style={styles.loadingText}>Case not found.</Text>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={{ marginTop: 16 }}
-          >
-            <Text style={{ color: Colors.primary, fontWeight: "600" }}>
-              ← Go Back
-            </Text>
+          <Text style={styles.loadingText}>{error || S.notFound}</Text>
+          <TouchableOpacity onPress={goBack} style={{ marginTop: 16 }}>
+            <Text style={{ color: Colors.primary, fontWeight: "600" }}>{S.goBack}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -152,20 +116,6 @@ export default function CaseProfileScreen({ navigation, route }: Props) {
   const statusColor = getCaseStatusColor(caseItem.status);
   const riskColor = getRiskColor(caseItem.riskLevel);
 
-  // Timeline as array (Firebase may store it as object)
-  const timeline = caseItem.timeline
-    ? Array.isArray(caseItem.timeline)
-      ? caseItem.timeline
-      : Object.values(caseItem.timeline as Record<string, any>)
-    : [];
-
-  // Evidence images as array
-  const evidenceImages = caseItem.evidenceImages
-    ? Array.isArray(caseItem.evidenceImages)
-      ? caseItem.evidenceImages
-      : Object.values(caseItem.evidenceImages as Record<string, any>)
-    : [];
-
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
       {/* Inspector Assign Modal */}
@@ -173,23 +123,24 @@ export default function CaseProfileScreen({ navigation, route }: Props) {
         <View style={styles.modalOverlay}>
           <View style={styles.assignModal}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Assign Inspector</Text>
+              <Text style={styles.modalTitle}>{S.assignInspector}</Text>
               <TouchableOpacity onPress={() => setAssignModal(false)}>
                 <Text style={styles.closeBtn}>✕</Text>
               </TouchableOpacity>
             </View>
-            {mockInspectors.map((ins) => (
+            {inspectors.map((ins) => (
               <TouchableOpacity
                 key={ins.id}
                 style={styles.inspectorRow}
                 onPress={() => ins.available && handleAssign(ins.name)}
                 activeOpacity={ins.available ? 0.75 : 1}
+                disabled={busy}
               >
                 <View style={styles.inspectorInfo}>
                   <Text style={styles.inspectorIcon}>👤</Text>
                   <View>
-                    <Text style={styles.inspectorName}>{ins.name}</Text>
-                    <Text style={styles.inspectorArea}>{ins.area}</Text>
+                    <Text style={[styles.inspectorName, { color: colors.text }]}>{ins.name}</Text>
+                    <Text style={[styles.inspectorArea, { color: colors.subText }]}>{ins.area}</Text>
                   </View>
                 </View>
                 <View
@@ -197,20 +148,16 @@ export default function CaseProfileScreen({ navigation, route }: Props) {
                     styles.assignBtn,
                     {
                       backgroundColor:
-                        assignedInspector === ins.name
+                        caseItem.inspector === ins.name
                           ? Colors.success
                           : ins.available
-                            ? Colors.primary
-                            : Colors.border,
+                          ? Colors.primary
+                          : Colors.border,
                     },
                   ]}
                 >
                   <Text style={styles.assignBtnText}>
-                    {assignedInspector === ins.name
-                      ? "Assigned"
-                      : ins.available
-                        ? "Assign"
-                        : "Busy"}
+                    {caseItem.inspector === ins.name ? S.assigned : ins.available ? S.assign : S.busy}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -219,107 +166,78 @@ export default function CaseProfileScreen({ navigation, route }: Props) {
         </View>
       </Modal>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pullRefresh} />}
+      >
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backBtn}
-          >
+        <View style={[styles.header, { backgroundColor: colors.card }]}>
+          <TouchableOpacity onPress={goBack} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
           <View style={styles.headerInfo}>
-            <Text style={styles.caseNumber}>{caseItem.caseNumber}</Text>
-            <Text style={styles.caseName}>
-              {caseItem.consumerName} •{" "}
-              {caseItem.meterNumber || caseItem.consumerId}
+            <Text style={[styles.caseNumber, { color: colors.text }]}>{caseItem.caseNumber}</Text>
+            <Text style={[styles.caseName, { color: colors.subText }]}>
+              {caseItem.consumerName} • {caseItem.meterNumber || caseItem.consumerId}
             </Text>
           </View>
           <View style={styles.headerBadges}>
-            <View
-              style={[
-                styles.badge,
-                {
-                  backgroundColor: statusColor + "20",
-                  borderColor: statusColor,
-                  borderWidth: 1,
-                },
-              ]}
-            >
-              <Text style={[styles.badgeText, { color: statusColor }]}>
-                {caseItem.status}
-              </Text>
+            <View style={[styles.badge, { backgroundColor: statusColor + "20", borderColor: statusColor, borderWidth: 1 }]}>
+              <Text style={[styles.badgeText, { color: statusColor }]}>{caseItem.status}</Text>
             </View>
-            <View
-              style={[
-                styles.badge,
-                { backgroundColor: riskColor + "15", marginTop: 4 },
-              ]}
-            >
-              <Text style={[styles.badgeText, { color: riskColor }]}>
-                {caseItem.riskLevel}
-              </Text>
+            <View style={[styles.badge, { backgroundColor: riskColor + "15", marginTop: 4 }]}>
+              <Text style={[styles.badgeText, { color: riskColor }]}>{caseItem.riskLevel}</Text>
             </View>
           </View>
         </View>
 
         {/* Case Details */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Case Details</Text>
-          <Text style={styles.caseDesc}>{caseItem.description}</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>{S.caseDetails}</Text>
+          <Text style={[styles.caseDesc, { color: colors.subText }]}>{caseItem.description}</Text>
           <View style={styles.detailGrid}>
             <View style={styles.detailItem}>
               <Text style={styles.detailIcon}>📍</Text>
-              <Text style={styles.detailLabel}>Area</Text>
-              <Text style={styles.detailValue}>{caseItem.area}</Text>
+              <Text style={[styles.detailLabel, { color: colors.subText }]}>Area</Text>
+              <Text style={[styles.detailValue, { color: colors.text }]}>{caseItem.area}</Text>
             </View>
             <View style={styles.detailItem}>
               <Text style={styles.detailIcon}>📅</Text>
-              <Text style={styles.detailLabel}>Created</Text>
-              <Text style={styles.detailValue}>{caseItem.createdAt}</Text>
+              <Text style={[styles.detailLabel, { color: colors.subText }]}>Created</Text>
+              <Text style={[styles.detailValue, { color: colors.text }]}>{caseItem.createdAt}</Text>
             </View>
             {caseItem.category && (
               <View style={styles.detailItem}>
                 <Text style={styles.detailIcon}>🏷</Text>
-                <Text style={styles.detailLabel}>Category</Text>
-                <Text style={styles.detailValue}>{caseItem.category}</Text>
+                <Text style={[styles.detailLabel, { color: colors.subText }]}>Category</Text>
+                <Text style={[styles.detailValue, { color: colors.text }]}>{caseItem.category}</Text>
               </View>
             )}
             {caseItem.priority && (
               <View style={styles.detailItem}>
                 <Text style={styles.detailIcon}>⚡</Text>
-                <Text style={styles.detailLabel}>Priority</Text>
-                <Text style={styles.detailValue}>{caseItem.priority}</Text>
+                <Text style={[styles.detailLabel, { color: colors.subText }]}>Priority</Text>
+                <Text style={[styles.detailValue, { color: colors.text }]}>{caseItem.priority}</Text>
               </View>
             )}
           </View>
         </View>
 
         {/* Timeline */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Case Timeline</Text>
-          {timeline.length === 0 ? (
-            <Text style={styles.noEvidence}>No timeline events yet</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>{S.timeline}</Text>
+          {caseItem.timeline.length === 0 ? (
+            <Text style={[styles.noEvidence, { color: colors.subText }]}>{S.noTimeline}</Text>
           ) : (
-            timeline.map((t: any, i: number) => (
+            caseItem.timeline.map((t, i) => (
               <View key={i} style={styles.timelineRow}>
                 <View style={styles.timelineDotCol}>
-                  <View
-                    style={[
-                      styles.timelineDot,
-                      {
-                        backgroundColor:
-                          i === 0 ? Colors.primary : Colors.border,
-                      },
-                    ]}
-                  />
-                  {i < timeline.length - 1 && (
-                    <View style={styles.timelineLine} />
-                  )}
+                  <View style={[styles.timelineDot, { backgroundColor: i === 0 ? Colors.primary : Colors.border }]} />
+                  {i < caseItem.timeline.length - 1 && <View style={styles.timelineLine} />}
                 </View>
                 <View style={styles.timelineContent}>
-                  <Text style={styles.timelineAction}>{t.action}</Text>
-                  <Text style={styles.timelineDate}>
+                  <Text style={[styles.timelineAction, { color: colors.text }]}>{t.action}</Text>
+                  <Text style={[styles.timelineDate, { color: colors.subText }]}>
                     {t.date} {t.time}
                   </Text>
                 </View>
@@ -328,84 +246,57 @@ export default function CaseProfileScreen({ navigation, route }: Props) {
           )}
         </View>
 
-        {/* Evidence */}
-        <View style={styles.card}>
+        {/* Evidence — images & PDFs the admin attached */}
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
           <View style={styles.evidenceHeader}>
-            <Text style={styles.cardTitle}>
-              Evidence ({evidenceImages.length})
-            </Text>
-            <TouchableOpacity style={styles.uploadBtn}>
-              <Text style={styles.uploadBtnText}>⬆ Upload</Text>
-            </TouchableOpacity>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>{S.evidence(caseItem.evidence.length)}</Text>
           </View>
-          {evidenceImages.length === 0 ? (
-            <Text style={styles.noEvidence}>No evidence uploaded yet</Text>
+          {caseItem.evidence.length === 0 ? (
+            <Text style={[styles.noEvidence, { color: colors.subText }]}>{S.noEvidence}</Text>
           ) : (
-            evidenceImages.map((img: any, i: number) => (
-              <View key={i} style={styles.evidenceItem}>
+            caseItem.evidence.map((ev, i) => (
+              <TouchableOpacity
+                key={i}
+                style={styles.evidenceItem}
+                onPress={() => router.push({ pathname: "/src/Admin/EvidenceViewerScreen", params: { url: ev.url, type: ev.type, name: ev.name } } as any)}
+              >
                 <View style={styles.evidenceIconBox}>
-                  <Text style={styles.evidenceIcon}>
-                    {img.type === "image" ? "🖼" : "📄"}
-                  </Text>
+                  <Text style={styles.evidenceIcon}>{ev.type === "image" ? "🖼" : "📄"}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.evidenceName} numberOfLines={1}>
-                    {img.name}
+                  <Text style={[styles.evidenceName, { color: colors.text }]} numberOfLines={1}>
+                    {ev.name}
                   </Text>
-                  <Text style={styles.evidenceMeta}>
-                    {img.uploadedBy || "Admin"} •{" "}
-                    {img.date || caseItem.createdAt}
+                  <Text style={[styles.evidenceMeta, { color: colors.subText }]}>
+                    {ev.uploadedBy || "Admin"} • {ev.date || caseItem.createdAt}
                   </Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))
           )}
         </View>
 
         {/* Assign Inspector */}
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
           <View style={styles.assignHeader}>
-            <Text style={styles.cardTitle}>Assign Inspector</Text>
-            <TouchableOpacity
-              style={styles.assignModalBtn}
-              onPress={() => setAssignModal(true)}
-            >
-              <Text style={styles.assignModalBtnText}>Change</Text>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>{S.assignInspector}</Text>
+            <TouchableOpacity style={styles.assignModalBtn} onPress={() => setAssignModal(true)}>
+              <Text style={styles.assignModalBtnText}>{S.change}</Text>
             </TouchableOpacity>
           </View>
-          {mockInspectors.map((ins) => (
-            <View key={ins.id} style={styles.inspectorRow}>
+          {caseItem.inspector ? (
+            <View style={styles.inspectorRow}>
               <View style={styles.inspectorInfo}>
                 <Text style={styles.inspectorIcon}>👤</Text>
-                <View>
-                  <Text style={styles.inspectorName}>{ins.name}</Text>
-                  <Text style={styles.inspectorArea}>{ins.area}</Text>
-                </View>
+                <Text style={[styles.inspectorName, { color: colors.text }]}>{caseItem.inspector}</Text>
               </View>
-              <TouchableOpacity
-                style={[
-                  styles.assignBtn,
-                  {
-                    backgroundColor:
-                      assignedInspector === ins.name
-                        ? Colors.success
-                        : ins.available
-                          ? Colors.primary
-                          : Colors.border,
-                  },
-                ]}
-                onPress={() => ins.available && handleAssign(ins.name)}
-              >
-                <Text style={styles.assignBtnText}>
-                  {assignedInspector === ins.name
-                    ? "Assigned"
-                    : ins.available
-                      ? "Assign"
-                      : "Busy"}
-                </Text>
-              </TouchableOpacity>
+              <View style={[styles.assignBtn, { backgroundColor: Colors.success }]}>
+                <Text style={styles.assignBtnText}>Assigned</Text>
+              </View>
             </View>
-          ))}
+          ) : (
+            <Text style={[styles.noEvidence, { color: Colors.warning }]}>{S.unassignedTapChange}</Text>
+          )}
         </View>
 
         {/* Actions */}
@@ -413,14 +304,16 @@ export default function CaseProfileScreen({ navigation, route }: Props) {
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: Colors.success }]}
             onPress={handleClose}
+            disabled={busy}
           >
-            <Text style={styles.actionBtnText}>✓ Close Case</Text>
+            <Text style={styles.actionBtnText}>{S.closeCase}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: Colors.danger }]}
             onPress={handleEscalate}
+            disabled={busy}
           >
-            <Text style={styles.actionBtnText}>⬆ Escalate</Text>
+            <Text style={styles.actionBtnText}>{S.escalate}</Text>
           </TouchableOpacity>
         </View>
 
@@ -430,18 +323,11 @@ export default function CaseProfileScreen({ navigation, route }: Props) {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles (unchanged, back-arrow style untouched) ─────────────
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
-
-  loadingBox: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 12,
-  },
+  loadingBox: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },
   loadingText: { fontSize: 15, color: Colors.textSecondary },
-
   header: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -463,7 +349,6 @@ const styles = StyleSheet.create({
   headerBadges: { alignItems: "flex-end" },
   badge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   badgeText: { fontSize: 11, fontWeight: "600" },
-
   card: {
     backgroundColor: Colors.white,
     borderRadius: 16,
@@ -475,67 +360,23 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.text,
-    marginBottom: 12,
-  },
-  caseDesc: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
+  cardTitle: { fontSize: 16, fontWeight: "700", color: Colors.text, marginBottom: 12 },
+  caseDesc: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20, marginBottom: 12 },
   detailGrid: { flexDirection: "row", flexWrap: "wrap", gap: 16 },
   detailItem: { minWidth: "45%" },
   detailIcon: { fontSize: 16, marginBottom: 4 },
   detailLabel: { fontSize: 11, color: Colors.textSecondary, marginBottom: 2 },
   detailValue: { fontSize: 13, fontWeight: "600", color: Colors.text },
-
   timelineRow: { flexDirection: "row", marginBottom: 4 },
   timelineDotCol: { alignItems: "center", width: 24, marginRight: 12 },
   timelineDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
-  timelineLine: {
-    width: 2,
-    flex: 1,
-    backgroundColor: Colors.border,
-    marginTop: 4,
-  },
+  timelineLine: { width: 2, flex: 1, backgroundColor: Colors.border, marginTop: 4 },
   timelineContent: { flex: 1, paddingBottom: 16 },
-  timelineAction: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: Colors.text,
-    lineHeight: 18,
-  },
+  timelineAction: { fontSize: 13, fontWeight: "500", color: Colors.text, lineHeight: 18 },
   timelineDate: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-
-  evidenceHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  uploadBtn: {
-    backgroundColor: Colors.primary + "15",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  uploadBtnText: { fontSize: 12, color: Colors.primary, fontWeight: "600" },
-  noEvidence: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    textAlign: "center",
-    padding: 16,
-  },
-  evidenceItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 10,
-  },
+  evidenceHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  noEvidence: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", padding: 16 },
+  evidenceItem: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10 },
   evidenceIconBox: {
     width: 44,
     height: 44,
@@ -547,13 +388,7 @@ const styles = StyleSheet.create({
   evidenceIcon: { fontSize: 22 },
   evidenceName: { fontSize: 13, fontWeight: "600", color: Colors.text },
   evidenceMeta: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-
-  assignHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
-  },
+  assignHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
   assignModalBtn: {
     backgroundColor: Colors.primary + "15",
     borderRadius: 8,
@@ -561,12 +396,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: 8,
   },
-  assignModalBtnText: {
-    fontSize: 12,
-    color: Colors.primary,
-    fontWeight: "600",
-  },
-
+  assignModalBtnText: { fontSize: 12, color: Colors.primary, fontWeight: "600" },
   inspectorRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -581,41 +411,12 @@ const styles = StyleSheet.create({
   inspectorArea: { fontSize: 12, color: Colors.textSecondary },
   assignBtn: { borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 },
   assignBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-
-  actionRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginHorizontal: 16,
-    marginTop: 4,
-  },
-  actionBtn: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  actionRow: { flexDirection: "row", gap: 12, marginHorizontal: 16, marginTop: 4 },
+  actionBtn: { flex: 1, padding: 16, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   actionBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
-
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "#00000060",
-    justifyContent: "flex-end",
-  },
-  assignModal: {
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
+  modalOverlay: { flex: 1, backgroundColor: "#00000060", justifyContent: "flex-end" },
+  assignModal: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
   modalTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
   closeBtn: { fontSize: 18, color: Colors.textSecondary },
 });

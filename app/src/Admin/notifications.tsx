@@ -1,425 +1,265 @@
-// AlertsScreen.tsx
-// ─────────────────────────────────────────────────────────────
-// ElectraGuard — System Alerts Screen (TypeScript)
-// Firebase "systemAlerts" collection se data dynamically fetch karta hai
-// ─────────────────────────────────────────────────────────────
-
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
-import React, { useEffect, useState } from "react";
+// app/src/Admin/notifications.tsx
+// Bell icon dabane par yeh screen khulti hai: consumers ke cases/queries + theft alerts (LIVE).
+import { useRouter } from "expo-router";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   RefreshControl,
   SafeAreaView,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import { db } from "../../../firebaseConfig";
+import { palette, timeAgo } from "../../../constants/adminUi";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
+import { AppNotification, useNotifications } from "../../../hooks/useAdminApi";
 
-// ─────────────────────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────────────────────
-type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
+type Tab = "all" | "unread";
 
-type AlertSeverity = "high" | "medium" | "low" | "info";
-
-interface SystemAlert {
-  id: string;
-  title: string;
-  description: string;
-  severity: AlertSeverity; // "high" | "medium" | "low" | "info"
-  timeLabel: string; // e.g. "2 mins ago"
-  createdAt: number; // timestamp for ordering
-}
-
-// ─────────────────────────────────────────────────────────────
-// SEVERITY CONFIG
-// ─────────────────────────────────────────────────────────────
-const SEVERITY_CONFIG: Record<
-  AlertSeverity,
-  {
-    bg: string;
-    border: string;
-    iconBg: string;
-    iconColor: string;
-    icon: IoniconsName;
-  }
-> = {
-  high: {
-    bg: "#FFF5F5",
-    border: "#FECACA",
-    iconBg: "#FEE2E2",
-    iconColor: "#DC2626",
-    icon: "warning-outline",
-  },
-  medium: {
-    bg: "#FFFBEB",
-    border: "#FDE68A",
-    iconBg: "#FEF3C7",
-    iconColor: "#D97706",
-    icon: "alert-circle-outline",
-  },
-  low: {
-    bg: "#F0FFF4",
-    border: "#BBF7D0",
-    iconBg: "#DCFCE7",
-    iconColor: "#16A34A",
-    icon: "information-circle-outline",
-  },
-  info: {
-    bg: "#F0FDFA",
-    border: "#99F6E4",
-    iconBg: "#CCFBF1",
-    iconColor: "#0D9488",
-    icon: "information-circle-outline",
-  },
+const ICONS: Record<string, string> = {
+  case_filed: "📋",
+  case_escalated: "🚨",
+  case_resolved: "✅",
+  theft_detected: "⚠️",
+  query: "💬",
+  alert: "🔔",
 };
 
-// ─────────────────────────────────────────────────────────────
-// ALERT CARD COMPONENT
-// ─────────────────────────────────────────────────────────────
-const AlertCard: React.FC<{ alert: SystemAlert }> = ({ alert }) => {
-  const config = SEVERITY_CONFIG[alert.severity] ?? SEVERITY_CONFIG.info;
-
-  return (
-    <View
-      style={[
-        styles.alertCard,
-        {
-          backgroundColor: config.bg,
-          borderColor: config.border,
-        },
-      ]}
-    >
-      {/* Left icon */}
-      <View style={[styles.alertIconBox, { backgroundColor: config.iconBg }]}>
-        <Ionicons name={config.icon} size={18} color={config.iconColor} />
-      </View>
-
-      {/* Content */}
-      <View style={styles.alertContent}>
-        <Text style={styles.alertTitle} numberOfLines={1}>
-          {alert.title}
-        </Text>
-        <Text style={styles.alertDesc} numberOfLines={2}>
-          {alert.description}
-        </Text>
-      </View>
-
-      {/* Time */}
-      <Text style={styles.alertTime}>{alert.timeLabel}</Text>
-    </View>
-  );
+const severityColor = (s: string): string => {
+  if (s === "high") return palette.danger;
+  if (s === "medium") return palette.warning;
+  if (s === "low") return palette.success;
+  return palette.accent;
 };
 
-// ─────────────────────────────────────────────────────────────
-// SEED DATA — Firebase mein pehli baar data dalne ke liye
-// ─────────────────────────────────────────────────────────────
-const SEED_ALERTS: Omit<SystemAlert, "id">[] = [
-  {
-    title: "High Anomaly Detected",
-    description: "Consumer C-10234567 showing 92% anomaly score in Sector G-10",
-    severity: "high",
-    timeLabel: "2 mins ago",
-    createdAt: Date.now() - 2 * 60 * 1000,
-  },
-  {
-    title: "Data Ingestion Delay",
-    description:
-      "Delayed data sync from Area DHA Phase 6 - Last update 45 mins ago",
-    severity: "medium",
-    timeLabel: "15 mins ago",
-    createdAt: Date.now() - 15 * 60 * 1000,
-  },
-  {
-    title: "Multiple Theft Cases",
-    description: "3 new theft cases opened in Gulberg III area today",
-    severity: "high",
-    timeLabel: "1 hour ago",
-    createdAt: Date.now() - 60 * 60 * 1000,
-  },
-  {
-    title: "System Maintenance",
-    description: "Scheduled maintenance on Feb 10, 2026 from 2 AM - 4 AM",
-    severity: "info",
-    timeLabel: "2 hours ago",
-    createdAt: Date.now() - 2 * 60 * 60 * 1000,
-  },
-];
-
-async function seedAlertsData() {
-  try {
-    const { doc, setDoc } = await import("firebase/firestore");
-    for (let i = 0; i < SEED_ALERTS.length; i++) {
-      const alert = SEED_ALERTS[i];
-      await setDoc(doc(db, "systemAlerts", `alert_${i + 1}`), alert);
-    }
-    console.log("systemAlerts seeded successfully.");
-  } catch (err) {
-    console.error("Seed error:", err);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// MAIN SCREEN
-// ─────────────────────────────────────────────────────────────
-export default function AlertsScreen(): React.ReactElement {
+export default function NotificationsScreen() {
+  const router = useRouter();
   const { colors } = useAppSettings();
-  const [alerts, setAlerts] = useState<SystemAlert[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { items, unread, loaded, error, refresh, markRead, markAllRead } =
+    useNotifications();
+
+  const [tab, setTab] = useState<Tab>("all");
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // ── Fetch from Firebase (real-time listener) ──────────────
-  useEffect(() => {
-    setError(null);
-    const q = query(
-      collection(db, "systemAlerts"),
-      orderBy("createdAt", "desc"),
-    );
+  const shown = tab === "unread" ? items.filter((n) => !n.read) : items;
 
-    const unsubscribe = onSnapshot(
-      q,
-      async (snapshot) => {
-        if (snapshot.empty) {
-          // Seed default data if collection is empty
-          console.log("Seeding systemAlerts...");
-          await seedAlertsData();
-        } else {
-          const data: SystemAlert[] = snapshot.docs.map((d) => ({
-            id: d.id,
-            ...(d.data() as Omit<SystemAlert, "id">),
-          }));
-          setAlerts(data);
-          setLoading(false);
-          setRefreshing(false);
-        }
-      },
-      (err) => {
-        console.error("Alerts fetch error:", err);
-        setError("Alerts load nahi ho sake.");
-        setLoading(false);
-        setRefreshing(false);
-      },
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    // onSnapshot will auto-update; just reset refreshing after short delay
-    setTimeout(() => setRefreshing(false), 800);
+    await refresh();
+    setRefreshing(false);
   };
 
-  // ── Loading State ─────────────────────────────────────────
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#0B3C5D" />
-        <Text style={styles.loadingText}>Loading alerts...</Text>
-      </View>
-    );
-  }
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/src/Admin/DashboardScreen" as any);
+  };
 
-  // ── Error State ───────────────────────────────────────────
-  if (error) {
-    return (
-      <View style={styles.centered}>
-        <Ionicons name="wifi-outline" size={48} color="#D1D5DB" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity
-          style={styles.retryBtn}
-          onPress={() => {
-            setLoading(true);
-            setError(null);
-          }}
-        >
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const openItem = (n: AppNotification) => {
+    if (!n.read) markRead([n.id]);
+    if (n.consumerKey) {
+      router.push({
+        pathname: "/src/Admin/ConsumerProfileScreen",
+        params: { id: n.consumerKey },
+      } as any);
+    }
+  };
 
-  return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#0B3C5D"
-          />
-        }
+  const renderItem = ({ item: n }: { item: AppNotification }) => {
+    const color = severityColor(n.severity);
+    return (
+      <TouchableOpacity
+        style={[
+          styles.item,
+          { backgroundColor: colors.card, borderLeftColor: color },
+          !n.read && styles.itemUnread,
+        ]}
+        onPress={() => openItem(n)}
+        activeOpacity={0.8}
       >
-        {/* ── Header Card ── */}
-        <View style={styles.headerCard}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={18} color="#0B3C5D" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>System Alerts</Text>
-          <Text style={styles.headerSubtitle}>
-            {alerts.length} active notification{alerts.length !== 1 ? "s" : ""}
+        <Text style={styles.icon}>{ICONS[n.type] ?? "🔔"}</Text>
+        <View style={{ flex: 1 }}>
+          <View style={styles.titleRow}>
+            <Text
+              style={[
+                styles.itemTitle,
+                { color: colors.text, fontWeight: n.read ? "600" : "800" },
+              ]}
+              numberOfLines={2}
+            >
+              {n.title}
+            </Text>
+            {!n.read && <View style={[styles.dot, { backgroundColor: color }]} />}
+          </View>
+          {!!n.message && (
+            <Text style={[styles.itemMsg, { color: colors.subText }]} numberOfLines={3}>
+              {n.message}
+            </Text>
+          )}
+          <Text style={[styles.itemTime, { color: colors.subText }]}>
+            {timeAgo(n.createdAt)}
+            {n.consumerKey ? "  •  Tap to open profile" : ""}
           </Text>
         </View>
+      </TouchableOpacity>
+    );
+  };
 
-        {/* ── Alerts List ── */}
-        <View style={styles.alertsList}>
-          {alerts.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={48}
-                color="#A3E4D7"
-              />
-              <Text style={styles.emptyTitle}>All Clear!</Text>
-              <Text style={styles.emptySubtitle}>
-                No active alerts at the moment.
-              </Text>
-            </View>
-          ) : (
-            alerts.map((alert) => <AlertCard key={alert.id} alert={alert} />)
-          )}
+  return (
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+
+      {/* Header */}
+      <View style={[styles.header, { backgroundColor: colors.card }]}>
+        <TouchableOpacity onPress={goBack} style={styles.backBtn}>
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Notifications</Text>
+          <Text style={[styles.headerSub, { color: colors.subText }]}>
+            {unread > 0 ? `${unread} unread` : "All caught up"}
+          </Text>
         </View>
+        <TouchableOpacity
+          onPress={markAllRead}
+          disabled={unread === 0}
+          style={[styles.markAllBtn, unread === 0 && { opacity: 0.4 }]}
+        >
+          <Text style={styles.markAllText}>Mark all read</Text>
+        </TouchableOpacity>
+      </View>
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
+      {/* Tabs */}
+      <View style={styles.tabs}>
+        {(["all", "unread"] as Tab[]).map((t) => (
+          <TouchableOpacity
+            key={t}
+            style={[
+              styles.tabBtn,
+              { backgroundColor: colors.card, borderColor: colors.border },
+              tab === t && styles.tabBtnActive,
+            ]}
+            onPress={() => setTab(t)}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                { color: colors.subText },
+                tab === t && styles.tabTextActive,
+              ]}
+            >
+              {t === "all" ? "All" : `Unread${unread > 0 ? ` (${unread})` : ""}`}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* List */}
+      {!loaded ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={palette.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={shown}
+          keyExtractor={(n) => n.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ListEmptyComponent={
+            <View style={styles.center}>
+              <Text style={styles.emptyIcon}>🔕</Text>
+              <Text style={[styles.emptyText, { color: colors.text }]}>
+                {error
+                  ? "Notifications load nahi ho sakin"
+                  : tab === "unread"
+                    ? "Koi unread notification nahi"
+                    : "Abhi koi notification nahi"}
+              </Text>
+              {!!error && (
+                <>
+                  <Text style={[styles.emptyDetail, { color: colors.subText }]}>{error}</Text>
+                  <TouchableOpacity style={styles.retryBtn} onPress={onRefresh}>
+                    <Text style={styles.retryText}>Retry</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// STYLES
-// ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F0F4F8" },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 20 },
-
-  // Center states
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F0F4F8",
-    gap: 12,
-  },
-  loadingText: { color: "#718096", fontSize: 14 },
-  errorText: {
-    color: "#718096",
-    fontSize: 14,
-    textAlign: "center",
-    paddingHorizontal: 32,
-  },
-  retryBtn: {
-    backgroundColor: "#0B3C5D",
-    paddingHorizontal: 28,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  retryText: { color: "#fff", fontWeight: "700" },
-
-  // Header
-  headerCard: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 18,
-    marginTop: 40,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#EFF6FF",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#1A202C",
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: "#9CA3AF",
-  },
-
-  // Alerts list
-  alertsList: {
-    gap: 10,
-  },
-
-  // Alert card
-  alertCard: {
+  safe: { flex: 1 },
+  header: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
+    padding: 16,
+    margin: 16,
+    marginTop: 40,
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  backBtn: { padding: 8, marginRight: 6 },
+  backArrow: { fontSize: 22, color: palette.primary, fontWeight: "600" },
+  headerTitle: { fontSize: 20, fontWeight: "700" },
+  headerSub: { fontSize: 12, marginTop: 2 },
+  markAllBtn: {
+    backgroundColor: palette.primary + "15",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  markAllText: { color: palette.primary, fontSize: 12, fontWeight: "700" },
+
+  tabs: { flexDirection: "row", paddingHorizontal: 16, marginBottom: 10, gap: 8 },
+  tabBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
     borderWidth: 1,
+  },
+  tabBtnActive: { backgroundColor: palette.primary, borderColor: palette.primary },
+  tabText: { fontSize: 13, fontWeight: "600" },
+  tabTextActive: { color: "#fff" },
+
+  listContent: { paddingHorizontal: 16, paddingBottom: 30, gap: 10, flexGrow: 1 },
+  item: {
+    flexDirection: "row",
     borderRadius: 14,
+    borderLeftWidth: 4,
     padding: 14,
     gap: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  alertIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    flexShrink: 0,
-  },
-  alertContent: {
-    flex: 1,
-  },
-  alertTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#1A202C",
-    marginBottom: 3,
-  },
-  alertDesc: {
-    fontSize: 11,
-    color: "#6B7280",
-    lineHeight: 16,
-  },
-  alertTime: {
-    fontSize: 10,
-    color: "#9CA3AF",
-    flexShrink: 0,
-    marginTop: 2,
-  },
+  itemUnread: { shadowOpacity: 0.12, elevation: 4 },
+  icon: { fontSize: 22, marginTop: 2 },
+  titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  itemTitle: { flex: 1, fontSize: 14 },
+  dot: { width: 9, height: 9, borderRadius: 5, marginTop: 5 },
+  itemMsg: { fontSize: 12, marginTop: 3, lineHeight: 17 },
+  itemTime: { fontSize: 11, marginTop: 6 },
 
-  // Empty state
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: 60,
-    gap: 10,
+  center: { alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
+  emptyIcon: { fontSize: 40, marginBottom: 10 },
+  emptyText: { fontSize: 15, fontWeight: "700" },
+  emptyDetail: { fontSize: 12, textAlign: "center", marginTop: 6, marginBottom: 12 },
+  retryBtn: {
+    backgroundColor: palette.primary,
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#1A202C",
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: "#9CA3AF",
-  },
+  retryText: { color: "#fff", fontWeight: "700" },
 });

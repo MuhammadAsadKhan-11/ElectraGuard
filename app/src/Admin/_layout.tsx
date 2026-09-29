@@ -1,5 +1,9 @@
+// app/src/Admin/_layout.tsx
+import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { Tabs } from "expo-router";
-import { Image, StyleSheet, Text, View } from "react-native";
+import React from "react";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const Colors = {
   primary: "#0B3C5D",
@@ -7,6 +11,15 @@ const Colors = {
   white: "#FFFFFF",
   border: "#E5E5EA",
 };
+
+// Only these routes are ever shown in the tab bar (order = display order)
+const VISIBLE_TABS = [
+  "index",
+  "RisksScreen",
+  "CasesScreen",
+  "ReportsScreen",
+  "ProfileScreen",
+];
 
 const TAB_ICONS = {
   dashboard: require("../../../assets/House.png"),
@@ -45,26 +58,65 @@ function TabIcon({
   );
 }
 
+// Custom tab bar: renders ONLY the 5 routes above, so any other file inside
+// the Admin folder can never show up as an extra tab.
+function AdminTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+  const activeKey = state.routes[state.index]?.key;
+
+  return (
+    <View style={[styles.tabBar, { paddingBottom: insets.bottom }]}>
+      {VISIBLE_TABS.map((name) => {
+        const route = state.routes.find((r) => r.name === name);
+        if (!route) return null;
+
+        const { options } = descriptors[route.key];
+        const focused = activeKey === route.key;
+
+        const onPress = () => {
+          const event = navigation.emit({
+            type: "tabPress",
+            target: route.key,
+            canPreventDefault: true,
+          });
+          if (!focused && !event.defaultPrevented) {
+            navigation.navigate(route.name, route.params);
+          }
+        };
+
+        return (
+          <TouchableOpacity
+            key={route.key}
+            accessibilityRole="button"
+            accessibilityState={focused ? { selected: true } : {}}
+            onPress={onPress}
+            activeOpacity={0.7}
+            style={styles.tabItem}
+          >
+            {options.tabBarIcon?.({
+              focused,
+              color: focused ? Colors.primary : Colors.textSecondary,
+              size: 24,
+            })}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function AdminLayout() {
   return (
     <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarShowLabel: false,
-        tabBarIconStyle: styles.tabBarIconStyle,
-      }}
+      tabBar={(props) => <AdminTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
-      {/* ✅ Sirf yeh 5 tabs show honge */}
+      {/* ✅ The 5 visible tabs */}
       <Tabs.Screen
         name="index"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon
-              image={TAB_ICONS.dashboard}
-              label="Dashboard"
-              focused={focused}
-            />
+            <TabIcon image={TAB_ICONS.dashboard} label="Dashboard" focused={focused} />
           ),
         }}
       />
@@ -88,11 +140,7 @@ export default function AdminLayout() {
         name="ReportsScreen"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon
-              image={TAB_ICONS.reports}
-              label="Reports"
-              focused={focused}
-            />
+            <TabIcon image={TAB_ICONS.reports} label="Reports" focused={focused} />
           ),
         }}
       />
@@ -100,16 +148,12 @@ export default function AdminLayout() {
         name="ProfileScreen"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon
-              image={TAB_ICONS.profile}
-              label="Profile"
-              focused={focused}
-            />
+            <TabIcon image={TAB_ICONS.profile} label="Profile" focused={focused} />
           ),
         }}
       />
 
-      {/* 🚫 Yeh sab hide hain — tabs mein nazar nahi aayenge */}
+      {/* 🚫 Hidden screens (still navigable via router.push, no tab shown) */}
       <Tabs.Screen name="CaseProfileScreen" options={{ href: null }} />
       <Tabs.Screen name="ConsumerProfileScreen" options={{ href: null }} />
       <Tabs.Screen name="createCaseScreen" options={{ href: null }} />
@@ -121,31 +165,27 @@ export default function AdminLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
+    flexDirection: "row",
     backgroundColor: Colors.white,
     borderTopWidth: 1,
     borderTopColor: Colors.border,
     height: 70,
-    paddingBottom: 0,
-    paddingTop: 0,
     shadowColor: "#000",
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 10,
   },
-  tabBarIconStyle: {
-    height: 60,
-    marginTop: 0,
+  tabItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   tabIconWrap: {
-    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
   },
-  tabImage: {
-    width: 24,
-    height: 24,
-  },
+  tabImage: { width: 24, height: 24 },
   tabLabel: {
     fontSize: 10,
     color: Colors.textSecondary,
@@ -153,8 +193,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     width: 70,
   },
-  tabLabelActive: {
-    color: Colors.primary,
-    fontWeight: "700",
-  },
+  tabLabelActive: { color: Colors.primary, fontWeight: "700" },
 });

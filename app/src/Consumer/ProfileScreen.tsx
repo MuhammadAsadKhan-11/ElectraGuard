@@ -1,7 +1,6 @@
 // ProfileScreen.tsx
 import { Ionicons } from "@expo/vector-icons";
-import { Buffer } from "buffer";
-import * as Crypto from "expo-crypto";
+import { useRouter } from "expo-router";
 import { router } from "expo-router";
 import {
   EmailAuthProvider,
@@ -9,12 +8,14 @@ import {
   signOut,
   updatePassword,
 } from "firebase/auth";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { deleteField, doc, getDoc, updateDoc } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -33,6 +34,14 @@ import { useAppSettings } from "../../../hooks/AppSettingContext";
 // ─────────────────────────────────────────────────────────────
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
+type FirestoreDate =
+  | { toDate: () => Date }
+  | Date
+  | string
+  | number
+  | null
+  | undefined;
+
 interface UserProfile {
   fullName: string;
   email: string;
@@ -40,8 +49,7 @@ interface UserProfile {
   consumerId: string;
   cnicNumber: string;
   role: string;
-  createdAt: any;
-  passwordEncoded?: string;
+  createdAt: FirestoreDate;
 }
 
 interface MenuRowProps {
@@ -53,12 +61,201 @@ interface MenuRowProps {
   labelColor?: string;
 }
 
+interface PolicySection {
+  heading: string;
+  body: string;
+}
+
+interface ExtraStrings {
+  fillAll: string;
+  tooMany: string;
+  logoutFailed: string;
+  updateFailed: string;
+  recentLogin: string;
+  noUser: string;
+  footerLine1: string;
+  footerLine2: string;
+  policy: PolicySection[];
+}
+
+// ─────────────────────────────────────────────────────────────
+// EXTRA TRANSLATIONS
+// (Yeh wo strings hain jo pehle hardcoded English thin.
+//  Ab language change hone par yeh bhi change hongi.)
+// ─────────────────────────────────────────────────────────────
+const EXTRA: Record<string, ExtraStrings> = {
+  en: {
+    fillAll: "Please fill in all fields.",
+    tooMany: "Too many attempts. Please try again later.",
+    logoutFailed: "Logout failed. Please try again.",
+    updateFailed: "Failed to update password.",
+    recentLogin: "For security, please log in again and retry.",
+    noUser: "No user found.",
+    footerLine1: "© 2026 ElectraGuard System",
+    footerLine2: "Government Enterprise Solution",
+    policy: [
+      {
+        heading: "1. Data Collection",
+        body: "ElectraGuard collects your name, CNIC, email, mobile number, Consumer ID, and electricity consumption data (CSV uploads) to provide electricity monitoring services.",
+      },
+      {
+        heading: "2. Data Usage",
+        body: "Your data is used solely to detect electricity theft, calculate consumption, and generate risk scores. We do not sell or share your data with third parties.",
+      },
+      {
+        heading: "3. Data Storage",
+        body: "All data is securely stored in Firebase (Google Cloud). Passwords are managed by Firebase Authentication and are never stored in plain text.",
+      },
+      {
+        heading: "4. Authentication",
+        body: "We use Firebase Authentication for secure login. OTP verification is used for password recovery and two-factor authentication.",
+      },
+      {
+        heading: "5. Your Rights",
+        body: "You may request deletion of your account and associated data by contacting our support team.",
+      },
+      {
+        heading: "6. Security",
+        body: "We follow industry-standard security practices including encrypted data transmission, secure password handling, and regular security reviews.",
+      },
+      {
+        heading: "7. Contact",
+        body: "For privacy-related queries, contact us at support@electraguard.pk or through the Support section in the app.",
+      },
+    ],
+  },
+  ur_roman: {
+    fillAll: "Baraye meharbani tamam fields bharein.",
+    tooMany: "Bohat zyada koshishein ho gayin. Baad mai dobara koshish karein.",
+    logoutFailed: "Logout nahi ho saka. Dobara koshish karein.",
+    updateFailed: "Password update nahi ho saka.",
+    recentLogin: "Security ke liye dobara login karein aur phir koshish karein.",
+    noUser: "User nahi mila.",
+    footerLine1: "© 2026 ElectraGuard System",
+    footerLine2: "Sarkari Enterprise Solution",
+    policy: [
+      {
+        heading: "1. Data ka Jama Karna",
+        body: "ElectraGuard aap ka naam, CNIC, email, mobile number, Consumer ID aur bijli ki khapat ka data (CSV uploads) bijli ki monitoring ki service dene ke liye jama karta hai.",
+      },
+      {
+        heading: "2. Data ka Istemal",
+        body: "Aap ka data sirf bijli chori pakadne, khapat calculate karne aur risk score banane ke liye istemal hota hai. Hum aap ka data kisi teesray fareeq ko farokht ya share nahi karte.",
+      },
+      {
+        heading: "3. Data ki Hifazat",
+        body: "Tamam data Firebase (Google Cloud) mai mehfooz hai. Passwords Firebase Authentication sambhalta hai aur yeh kabhi plain text mai store nahi hote.",
+      },
+      {
+        heading: "4. Authentication",
+        body: "Mehfooz login ke liye Firebase Authentication istemal hoti hai. Password recovery aur two-factor authentication ke liye OTP verification istemal hoti hai.",
+      },
+      {
+        heading: "5. Aap ke Huqooq",
+        body: "Aap hamari support team se rabta kar ke apna account aur us se mutaliq data delete karne ki darkhwast kar sakte hain.",
+      },
+      {
+        heading: "6. Security",
+        body: "Hum industry-standard security practices apnate hain, jin mai encrypted data transmission, mehfooz password handling aur security ka baqaida jaiza shamil hai.",
+      },
+      {
+        heading: "7. Rabta",
+        body: "Privacy se mutaliq sawalat ke liye support@electraguard.pk par ya app ke Support section se rabta karein.",
+      },
+    ],
+  },
+  ur: {
+    fillAll: "براہ کرم تمام خانے پُر کریں۔",
+    tooMany: "بہت زیادہ کوششیں ہو چکی ہیں۔ براہ کرم بعد میں دوبارہ کوشش کریں۔",
+    logoutFailed: "لاگ آؤٹ نہیں ہو سکا۔ دوبارہ کوشش کریں۔",
+    updateFailed: "پاس ورڈ اپڈیٹ نہیں ہو سکا۔",
+    recentLogin: "سیکیورٹی کے لیے دوبارہ لاگ اِن کریں اور پھر کوشش کریں۔",
+    noUser: "صارف نہیں ملا۔",
+    footerLine1: "© 2026 ElectraGuard System",
+    footerLine2: "سرکاری انٹرپرائز سلوشن",
+    policy: [
+      {
+        heading: "1. ڈیٹا اکٹھا کرنا",
+        body: "ElectraGuard آپ کا نام، CNIC، ای میل، موبائل نمبر، کنزیومر آئی ڈی اور بجلی کی کھپت کا ڈیٹا (CSV اپ لوڈز) بجلی کی نگرانی کی سروس فراہم کرنے کے لیے جمع کرتا ہے۔",
+      },
+      {
+        heading: "2. ڈیٹا کا استعمال",
+        body: "آپ کا ڈیٹا صرف بجلی چوری کا پتا لگانے، کھپت کا حساب لگانے اور رسک اسکور بنانے کے لیے استعمال ہوتا ہے۔ ہم آپ کا ڈیٹا کسی تیسرے فریق کو فروخت یا شیئر نہیں کرتے۔",
+      },
+      {
+        heading: "3. ڈیٹا کا ذخیرہ",
+        body: "تمام ڈیٹا Firebase (Google Cloud) میں محفوظ طریقے سے رکھا جاتا ہے۔ پاس ورڈ Firebase Authentication کے ذریعے سنبھالے جاتے ہیں اور کبھی سادہ متن میں محفوظ نہیں کیے جاتے۔",
+      },
+      {
+        heading: "4. تصدیق",
+        body: "محفوظ لاگ اِن کے لیے Firebase Authentication استعمال ہوتی ہے۔ پاس ورڈ کی بازیابی اور ٹو فیکٹر تصدیق کے لیے OTP استعمال ہوتا ہے۔",
+      },
+      {
+        heading: "5. آپ کے حقوق",
+        body: "آپ ہماری سپورٹ ٹیم سے رابطہ کر کے اپنا اکاؤنٹ اور متعلقہ ڈیٹا حذف کرنے کی درخواست کر سکتے ہیں۔",
+      },
+      {
+        heading: "6. سیکیورٹی",
+        body: "ہم صنعتی معیار کے مطابق سیکیورٹی اقدامات اپناتے ہیں، جن میں انکرپٹڈ ڈیٹا ٹرانسمیشن، پاس ورڈ کا محفوظ انتظام اور سیکیورٹی کا باقاعدہ جائزہ شامل ہے۔",
+      },
+      {
+        heading: "7. رابطہ",
+        body: "پرائیویسی سے متعلق سوالات کے لیے support@electraguard.pk پر یا ایپ کے سپورٹ سیکشن کے ذریعے رابطہ کریں۔",
+      },
+    ],
+  },
+  ar: {
+    fillAll: "يرجى ملء جميع الحقول.",
+    tooMany: "محاولات كثيرة جدًا. يرجى المحاولة لاحقًا.",
+    logoutFailed: "فشل تسجيل الخروج. حاول مرة أخرى.",
+    updateFailed: "فشل تحديث كلمة المرور.",
+    recentLogin: "لأسباب أمنية، يرجى تسجيل الدخول مرة أخرى ثم المحاولة.",
+    noUser: "لم يتم العثور على المستخدم.",
+    footerLine1: "© 2026 ElectraGuard System",
+    footerLine2: "حل مؤسسي حكومي",
+    policy: [
+      {
+        heading: "1. جمع البيانات",
+        body: "يجمع ElectraGuard اسمك ورقم الهوية الوطنية (CNIC) وبريدك الإلكتروني ورقم هاتفك المحمول ومعرّف المستهلك وبيانات استهلاك الكهرباء (ملفات CSV) لتقديم خدمات مراقبة الكهرباء.",
+      },
+      {
+        heading: "2. استخدام البيانات",
+        body: "تُستخدم بياناتك فقط للكشف عن سرقة الكهرباء وحساب الاستهلاك وإنشاء درجات المخاطر. لا نبيع بياناتك ولا نشاركها مع أطراف ثالثة.",
+      },
+      {
+        heading: "3. تخزين البيانات",
+        body: "تُخزَّن جميع البيانات بشكل آمن في Firebase (Google Cloud). تتم إدارة كلمات المرور عبر Firebase Authentication ولا تُخزَّن أبدًا كنص عادي.",
+      },
+      {
+        heading: "4. المصادقة",
+        body: "نستخدم Firebase Authentication لتسجيل دخول آمن. يُستخدم رمز التحقق (OTP) لاستعادة كلمة المرور والمصادقة الثنائية.",
+      },
+      {
+        heading: "5. حقوقك",
+        body: "يمكنك طلب حذف حسابك والبيانات المرتبطة به عبر التواصل مع فريق الدعم لدينا.",
+      },
+      {
+        heading: "6. الأمان",
+        body: "نطبّق ممارسات أمان معيارية تشمل تشفير نقل البيانات والإدارة الآمنة لكلمات المرور ومراجعات أمنية دورية.",
+      },
+      {
+        heading: "7. التواصل",
+        body: "للاستفسارات المتعلقة بالخصوصية، تواصل معنا عبر support@electraguard.pk أو من خلال قسم الدعم في التطبيق.",
+      },
+    ],
+  },
+};
+
 // ─────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────
-const formatDate = (ts: any): string => {
+const formatDate = (ts: FirestoreDate): string => {
   if (!ts) return "—";
-  const date = ts?.toDate ? ts.toDate() : new Date(ts);
+  const date =
+    typeof ts === "object" && "toDate" in ts
+      ? ts.toDate()
+      : new Date(ts as string | number | Date);
+  if (isNaN(date.getTime())) return "—";
   return date.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -66,12 +263,16 @@ const formatDate = (ts: any): string => {
   });
 };
 
+const capitalize = (s: string): string =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
 // ─────────────────────────────────────────────────────────────
 // AVATAR INITIALS
 // ─────────────────────────────────────────────────────────────
 const AvatarInitials: React.FC<{ name: string }> = ({ name }) => {
   const initials = name
     .split(" ")
+    .filter(Boolean)
     .map((w) => w[0])
     .slice(0, 2)
     .join("")
@@ -92,33 +293,96 @@ const MenuRow: React.FC<MenuRowProps> = ({
   subtitle,
   onPress,
   showChevron = true,
-  labelColor = "#1A202C",
-}) => (
-  <TouchableOpacity
-    style={styles.menuRow}
-    onPress={onPress}
-    activeOpacity={0.6}
-    disabled={!onPress}
-  >
-    <View style={styles.menuIconBox}>
-      <Ionicons name={icon} size={18} color="#718096" />
-    </View>
-    <View style={styles.menuTextBox}>
-      <Text style={[styles.menuLabel, { color: labelColor }]}>{label}</Text>
-      {!!subtitle && <Text style={styles.menuSubtitle}>{subtitle}</Text>}
-    </View>
-    {showChevron && (
-      <Ionicons name="chevron-forward" size={16} color="#CBD5E0" />
-    )}
-  </TouchableOpacity>
-);
+  labelColor,
+}) => {
+  const { colors } = useAppSettings();
+  return (
+    <TouchableOpacity
+      style={styles.menuRow}
+      onPress={onPress}
+      activeOpacity={0.6}
+      disabled={!onPress}
+    >
+      <View
+        style={[styles.menuIconBox, { backgroundColor: colors.background }]}
+      >
+        <Ionicons name={icon} size={18} color={colors.subText} />
+      </View>
+      <View style={styles.menuTextBox}>
+        <Text style={[styles.menuLabel, { color: labelColor ?? colors.text }]}>
+          {label}
+        </Text>
+        {!!subtitle && (
+          <Text style={[styles.menuSubtitle, { color: colors.subText }]}>
+            {subtitle}
+          </Text>
+        )}
+      </View>
+      {showChevron && (
+        <Ionicons name="chevron-forward" size={16} color={colors.subText} />
+      )}
+    </TouchableOpacity>
+  );
+};
 
-const SectionHeader: React.FC<{ title: string }> = ({ title }) => (
-  <Text style={styles.sectionTitle}>{title}</Text>
-);
+const SectionHeader: React.FC<{ title: string }> = ({ title }) => {
+  const { colors } = useAppSettings();
+  return (
+    <Text style={[styles.sectionTitle, { color: colors.subText }]}>
+      {title}
+    </Text>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────
-// SYSTEM SETTINGS MODAL  ← updated
+// PASSWORD FIELD (module level component => input focus kho nahi hota)
+// ─────────────────────────────────────────────────────────────
+interface PasswordFieldProps {
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder: string;
+  show: boolean;
+  onToggle: () => void;
+}
+
+const PasswordField: React.FC<PasswordFieldProps> = ({
+  value,
+  onChangeText,
+  placeholder,
+  show,
+  onToggle,
+}) => {
+  const { colors } = useAppSettings();
+  return (
+    <View
+      style={[
+        styles.passInputWrapper,
+        { backgroundColor: colors.background, borderColor: colors.border },
+      ]}
+    >
+      <TextInput
+        style={[styles.passInput, { color: colors.text }]}
+        placeholder={placeholder}
+        placeholderTextColor={colors.subText}
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={!show}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+      <TouchableOpacity onPress={onToggle} style={{ paddingHorizontal: 12 }}>
+        <Ionicons
+          name={show ? "eye-off-outline" : "eye-outline"}
+          size={18}
+          color={colors.subText}
+        />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────
+// SYSTEM SETTINGS MODAL
 // ─────────────────────────────────────────────────────────────
 const SystemSettingsModal: React.FC<{
   visible: boolean;
@@ -148,90 +412,117 @@ const SystemSettingsModal: React.FC<{
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>
-        <View style={[styles.modalBox, { paddingBottom: 28 }]}>
-          <Text style={styles.modalTitle}>{t.settingsTitle}</Text>
+        <View
+          style={[
+            styles.modalBox,
+            { paddingBottom: 28, backgroundColor: colors.card },
+          ]}
+        >
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            {t.settingsTitle}
+          </Text>
 
           {/* ── Language ── */}
-          <Text style={styles.settingsSection}>{t.appLanguage}</Text>
+          <Text style={[styles.settingsSection, { color: colors.subText }]}>
+            {t.appLanguage}
+          </Text>
           <View style={styles.optionsGrid}>
-            {languages.map(({ key, label }) => (
-              <TouchableOpacity
-                key={key}
-                style={[
-                  styles.optionPill,
-                  language === key && styles.optionPillActive,
-                ]}
-                onPress={() => setLanguage(key)}
-                activeOpacity={0.7}
-              >
-                {language === key && (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={14}
-                    color="#fff"
-                    style={{ marginRight: 4 }}
-                  />
-                )}
-                <Text
+            {languages.map(({ key, label }) => {
+              const active = language === key;
+              return (
+                <TouchableOpacity
+                  key={key}
                   style={[
-                    styles.optionPillText,
-                    language === key && styles.optionPillTextActive,
+                    styles.optionPill,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                    },
+                    active && styles.optionPillActive,
                   ]}
+                  onPress={() => setLanguage(key)}
+                  activeOpacity={0.7}
                 >
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  {active && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={14}
+                      color="#fff"
+                      style={{ marginRight: 4 }}
+                    />
+                  )}
+                  <Text
+                    style={[
+                      styles.optionPillText,
+                      { color: colors.text },
+                      active && styles.optionPillTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* ── Theme ── */}
-          <Text style={styles.settingsSection}>{t.appTheme}</Text>
+          <Text style={[styles.settingsSection, { color: colors.subText }]}>
+            {t.appTheme}
+          </Text>
           <View style={styles.themeRow}>
-            {themes.map(({ key, label, icon }) => (
-              <TouchableOpacity
-                key={key}
-                style={[
-                  styles.themeCard,
-                  theme === key && styles.themeCardActive,
-                ]}
-                onPress={() => setTheme(key)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={icon}
-                  size={22}
-                  color={theme === key ? "#fff" : "#718096"}
-                />
-                <Text
+            {themes.map(({ key, label, icon }) => {
+              const active = theme === key;
+              return (
+                <TouchableOpacity
+                  key={key}
                   style={[
-                    styles.themeCardText,
-                    theme === key && styles.themeCardTextActive,
+                    styles.themeCard,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                    },
+                    active && styles.themeCardActive,
                   ]}
+                  onPress={() => setTheme(key)}
+                  activeOpacity={0.7}
                 >
-                  {label}
-                </Text>
-                {theme === key && (
                   <Ionicons
-                    name="checkmark-circle"
-                    size={14}
-                    color="#fff"
-                    style={{ marginTop: 2 }}
+                    name={icon}
+                    size={22}
+                    color={active ? "#fff" : colors.subText}
                   />
-                )}
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={[
+                      styles.themeCardText,
+                      { color: colors.subText },
+                      active && styles.themeCardTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                  {active && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={14}
+                      color="#fff"
+                      style={{ marginTop: 2 }}
+                    />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* ── Data Sync & Cache (read-only) ── */}
           <View style={styles.settingsInfoRow}>
-            <Ionicons name="sync-outline" size={16} color="#718096" />
-            <Text style={styles.settingsInfoText}>
+            <Ionicons name="sync-outline" size={16} color={colors.subText} />
+            <Text style={[styles.settingsInfoText, { color: colors.subText }]}>
               {t.dataSync}: {t.dataSyncSub}
             </Text>
           </View>
           <View style={styles.settingsInfoRow}>
-            <Ionicons name="trash-outline" size={16} color="#718096" />
-            <Text style={styles.settingsInfoText}>
+            <Ionicons name="trash-outline" size={16} color={colors.subText} />
+            <Text style={[styles.settingsInfoText, { color: colors.subText }]}>
               {t.cacheInfo}: {t.cacheInfoSub}
             </Text>
           </View>
@@ -256,7 +547,46 @@ const ProfileInfoModal: React.FC<{
   profile: UserProfile | null;
   onClose: () => void;
 }> = ({ visible, profile, onClose }) => {
-  const { t } = useAppSettings();
+  const { t, colors } = useAppSettings();
+
+  const rows: { label: string; value?: string; icon: IoniconsName }[] = [
+    {
+      label: t.fullName,
+      value: profile?.fullName,
+      icon: "person-outline",
+    },
+    {
+      label: t.consumerId,
+      value: profile?.consumerId,
+      icon: "card-outline",
+    },
+    {
+      label: t.cnicNumber,
+      value: profile?.cnicNumber,
+      icon: "id-card-outline",
+    },
+    {
+      label: t.email,
+      value: profile?.email,
+      icon: "mail-outline",
+    },
+    {
+      label: t.mobileNumber,
+      value: profile?.mobileNumber,
+      icon: "call-outline",
+    },
+    {
+      label: t.role,
+      value: profile?.role ? capitalize(profile.role) : t.consumer,
+      icon: "shield-outline",
+    },
+    {
+      label: t.registeredOn,
+      value: formatDate(profile?.createdAt),
+      icon: "calendar-outline",
+    },
+  ];
+
   return (
     <Modal
       visible={visible}
@@ -265,54 +595,27 @@ const ProfileInfoModal: React.FC<{
       onRequestClose={onClose}
     >
       <View style={styles.modalOverlay}>
-        <View style={[styles.modalBox, { paddingBottom: 28 }]}>
-          <Text style={styles.modalTitle}>{t.profileInfo}</Text>
-          {[
-            {
-              label: t.fullName,
-              value: profile?.fullName,
-              icon: "person-outline" as IoniconsName,
-            },
-            {
-              label: t.consumerId,
-              value: profile?.consumerId,
-              icon: "card-outline" as IoniconsName,
-            },
-            {
-              label: t.cnicNumber,
-              value: profile?.cnicNumber,
-              icon: "id-card-outline" as IoniconsName,
-            },
-            {
-              label: t.email,
-              value: profile?.email,
-              icon: "mail-outline" as IoniconsName,
-            },
-            {
-              label: t.mobileNumber,
-              value: profile?.mobileNumber,
-              icon: "call-outline" as IoniconsName,
-            },
-            {
-              label: t.role,
-              value: profile?.role
-                ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
-                : t.consumer,
-              icon: "shield-outline" as IoniconsName,
-            },
-            {
-              label: t.registeredOn,
-              value: formatDate(profile?.createdAt),
-              icon: "calendar-outline" as IoniconsName,
-            },
-          ].map(({ label, value, icon }) => (
+        <View
+          style={[
+            styles.modalBox,
+            { paddingBottom: 28, backgroundColor: colors.card },
+          ]}
+        >
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            {t.profileInfo}
+          </Text>
+          {rows.map(({ label, value, icon }) => (
             <View key={label} style={styles.infoRow}>
               <View style={styles.infoIconBox}>
                 <Ionicons name={icon} size={16} color="#2B4C7E" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.infoLabel}>{label}</Text>
-                <Text style={styles.infoValue}>{value || "—"}</Text>
+                <Text style={[styles.infoLabel, { color: colors.subText }]}>
+                  {label}
+                </Text>
+                <Text style={[styles.infoValue, { color: colors.text }]}>
+                  {value || "—"}
+                </Text>
               </View>
             </View>
           ))}
@@ -330,10 +633,11 @@ const ProfileInfoModal: React.FC<{
 // ─────────────────────────────────────────────────────────────
 const ChangePasswordModal: React.FC<{
   visible: boolean;
-  profile: UserProfile | null;
   onClose: () => void;
-}> = ({ visible, profile, onClose }) => {
-  const { t } = useAppSettings();
+}> = ({ visible, onClose }) => {
+  const { t, colors, language } = useAppSettings();
+  const extra = EXTRA[language] ?? EXTRA.en;
+
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
@@ -350,6 +654,7 @@ const ChangePasswordModal: React.FC<{
     setShowNew(false);
     setShowConfirm(false);
   };
+
   const handleClose = () => {
     reset();
     onClose();
@@ -363,9 +668,18 @@ const ChangePasswordModal: React.FC<{
     });
   };
 
+  const showWrongPasswordAlert = () => {
+    Alert.alert(t.error, t.incorrectPass, [
+      { text: t.forgotPassword, onPress: handleForgotPassword },
+      { text: t.cancel, style: "cancel" },
+    ]);
+  };
+
   const handleChangePassword = async () => {
+    if (loading) return;
+
     if (!oldPassword || !newPassword || !confirmPass) {
-      Alert.alert(t.error, "Please fill in all fields.");
+      Alert.alert(t.error, extra.fillAll);
       return;
     }
     if (newPassword.length < 6) {
@@ -380,85 +694,45 @@ const ChangePasswordModal: React.FC<{
     setLoading(true);
     try {
       const user = auth.currentUser;
-      if (!user || !user.email) throw new Error("No user found.");
+      if (!user || !user.email) throw new Error(extra.noUser);
 
-      if (profile?.passwordEncoded) {
-        const storedOld = Buffer.from(
-          profile.passwordEncoded,
-          "base64",
-        ).toString("utf8");
-        if (oldPassword !== storedOld) {
-          Alert.alert(t.error, t.incorrectPass, [
-            { text: t.forgotPassword, onPress: handleForgotPassword },
-            { text: t.cancel, style: "cancel" },
-          ]);
-          setLoading(false);
-          return;
-        }
-      }
-
+      // Firebase khud old password verify karta hai (client-side compare ki zaroorat nahi)
       const credential = EmailAuthProvider.credential(user.email, oldPassword);
       await reauthenticateWithCredential(user, credential);
       await updatePassword(user, newPassword);
 
-      const newHash = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        newPassword,
-      );
-      const newEncoded = Buffer.from(newPassword).toString("base64");
-      await updateDoc(doc(db, "consumers", user.uid), {
-        passwordHash: newHash,
-        passwordEncoded: newEncoded,
-      });
+      // Purane insecure fields (agar Firestore mai maujood hon) hata do.
+      // Yeh fail bhi ho jaye to password change already ho chuka hai.
+      try {
+        await updateDoc(doc(db, "consumers", user.uid), {
+          passwordHash: deleteField(),
+          passwordEncoded: deleteField(),
+        });
+      } catch (cleanupErr) {
+        console.warn("Legacy password field cleanup skipped:", cleanupErr);
+      }
 
-      Alert.alert(t.success + " ✅", t.passUpdated);
+      Alert.alert(`${t.success} ✅`, t.passUpdated);
       handleClose();
     } catch (error: any) {
-      switch (error.code) {
+      switch (error?.code) {
         case "auth/wrong-password":
         case "auth/invalid-credential":
-          Alert.alert(t.error, t.incorrectPass, [
-            { text: t.forgotPassword, onPress: handleForgotPassword },
-            { text: t.cancel, style: "cancel" },
-          ]);
+          showWrongPasswordAlert();
           break;
         case "auth/too-many-requests":
-          Alert.alert(t.error, "Too many attempts. Please try again later.");
+          Alert.alert(t.error, extra.tooMany);
+          break;
+        case "auth/requires-recent-login":
+          Alert.alert(t.error, extra.recentLogin);
           break;
         default:
-          Alert.alert(t.error, error.message || "Failed to update password.");
+          Alert.alert(t.error, error?.message || extra.updateFailed);
       }
     } finally {
       setLoading(false);
     }
   };
-
-  const PasswordField = (
-    value: string,
-    setter: (v: string) => void,
-    placeholder: string,
-    show: boolean,
-    toggleShow: () => void,
-  ) => (
-    <View style={styles.passInputWrapper}>
-      <TextInput
-        style={styles.passInput}
-        placeholder={placeholder}
-        placeholderTextColor="#B0BEC5"
-        value={value}
-        onChangeText={setter}
-        secureTextEntry={!show}
-        autoCapitalize="none"
-      />
-      <TouchableOpacity onPress={toggleShow} style={{ paddingHorizontal: 12 }}>
-        <Ionicons
-          name={show ? "eye-off-outline" : "eye-outline"}
-          size={18}
-          color="#9CA3AF"
-        />
-      </TouchableOpacity>
-    </View>
-  );
 
   return (
     <Modal
@@ -467,60 +741,79 @@ const ChangePasswordModal: React.FC<{
       animationType="slide"
       onRequestClose={handleClose}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalBox}>
-          <Text style={styles.modalTitle}>{t.changePassTitle}</Text>
-          <Text style={styles.modalMessage}>{t.changePassSub}</Text>
-          {PasswordField(
-            oldPassword,
-            setOldPassword,
-            t.oldPassword,
-            showOld,
-            () => setShowOld((v) => !v),
-          )}
-          {PasswordField(
-            newPassword,
-            setNewPassword,
-            t.newPassword,
-            showNew,
-            () => setShowNew((v) => !v),
-          )}
-          {PasswordField(
-            confirmPass,
-            setConfirmPass,
-            t.confirmPassword,
-            showConfirm,
-            () => setShowConfirm((v) => !v),
-          )}
-          <TouchableOpacity
-            onPress={handleForgotPassword}
-            style={{ alignSelf: "flex-end", marginBottom: 16 }}
-          >
-            <Text style={{ color: "#2B4C7E", fontSize: 12, fontWeight: "600" }}>
-              {t.forgotPassword}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: colors.card }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              {t.changePassTitle}
             </Text>
-          </TouchableOpacity>
-          <View style={styles.modalButtons}>
+            <Text style={[styles.modalMessage, { color: colors.subText }]}>
+              {t.changePassSub}
+            </Text>
+
+            <PasswordField
+              value={oldPassword}
+              onChangeText={setOldPassword}
+              placeholder={t.oldPassword}
+              show={showOld}
+              onToggle={() => setShowOld((v) => !v)}
+            />
+            <PasswordField
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder={t.newPassword}
+              show={showNew}
+              onToggle={() => setShowNew((v) => !v)}
+            />
+            <PasswordField
+              value={confirmPass}
+              onChangeText={setConfirmPass}
+              placeholder={t.confirmPassword}
+              show={showConfirm}
+              onToggle={() => setShowConfirm((v) => !v)}
+            />
+
             <TouchableOpacity
-              style={styles.modalCancelBtn}
-              onPress={handleClose}
+              onPress={handleForgotPassword}
+              style={{ alignSelf: "flex-end", marginBottom: 16 }}
             >
-              <Text style={styles.modalCancelText}>{t.cancel}</Text>
+              <Text
+                style={{ color: "#2B4C7E", fontSize: 12, fontWeight: "600" }}
+              >
+                {t.forgotPassword}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalLogoutBtn}
-              onPress={handleChangePassword}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.modalLogoutText}>{t.confirm}</Text>
-              )}
-            </TouchableOpacity>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.modalCancelBtn,
+                  { backgroundColor: colors.background },
+                ]}
+                onPress={handleClose}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.text }]}>
+                  {t.cancel}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalLogoutBtn}
+                onPress={handleChangePassword}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.modalLogoutText}>{t.confirm}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
@@ -532,7 +825,9 @@ const PrivacyPolicyModal: React.FC<{
   visible: boolean;
   onClose: () => void;
 }> = ({ visible, onClose }) => {
-  const { t } = useAppSettings();
+  const { t, colors, language } = useAppSettings();
+  const extra = EXTRA[language] ?? EXTRA.en;
+
   return (
     <Modal
       visible={visible}
@@ -542,56 +837,40 @@ const PrivacyPolicyModal: React.FC<{
     >
       <View style={styles.modalOverlay}>
         <View
-          style={[styles.modalBox, { maxHeight: "85%", paddingBottom: 24 }]}
+          style={[
+            styles.modalBox,
+            {
+              maxHeight: "85%",
+              paddingBottom: 24,
+              backgroundColor: colors.card,
+            },
+          ]}
         >
-          <Text style={styles.modalTitle}>{t.privacyTitle}</Text>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            {t.privacyTitle}
+          </Text>
           <ScrollView
             showsVerticalScrollIndicator={false}
             style={{ width: "100%" }}
           >
-            {[
-              {
-                heading: "1. Data Collection",
-                body: "ElectraGuard collects your name, CNIC, email, mobile number, Consumer ID, and electricity consumption data (CSV uploads) to provide electricity monitoring services.",
-              },
-              {
-                heading: "2. Data Usage",
-                body: "Your data is used solely to detect electricity theft, calculate consumption, and generate risk scores. We do not sell or share your data with third parties.",
-              },
-              {
-                heading: "3. Data Storage",
-                body: "All data is securely stored in Firebase (Google Cloud). Passwords are encrypted using SHA-256 hashing before storage.",
-              },
-              {
-                heading: "4. Authentication",
-                body: "We use Firebase Authentication for secure login. OTP verification is used for password recovery and two-factor authentication.",
-              },
-              {
-                heading: "5. Your Rights",
-                body: "You may request deletion of your account and associated data by contacting our support team.",
-              },
-              {
-                heading: "6. Security",
-                body: "We implement industry-standard security practices including encrypted data transmission, hashed passwords, and regular security audits.",
-              },
-              {
-                heading: "7. Contact",
-                body: "For privacy-related queries, contact us at support@electraguard.pk or through the Support section in the app.",
-              },
-            ].map(({ heading, body }) => (
+            {extra.policy.map(({ heading, body }) => (
               <View key={heading} style={{ marginBottom: 14 }}>
                 <Text
                   style={{
                     fontSize: 13,
                     fontWeight: "700",
-                    color: "#1A202C",
+                    color: colors.text,
                     marginBottom: 4,
                   }}
                 >
                   {heading}
                 </Text>
                 <Text
-                  style={{ fontSize: 12, color: "#4A5568", lineHeight: 18 }}
+                  style={{
+                    fontSize: 12,
+                    color: colors.subText,
+                    lineHeight: 18,
+                  }}
                 >
                   {body}
                 </Text>
@@ -600,7 +879,7 @@ const PrivacyPolicyModal: React.FC<{
             <Text
               style={{
                 fontSize: 11,
-                color: "#A0AEC0",
+                color: colors.subText,
                 marginTop: 8,
                 textAlign: "center",
               }}
@@ -625,6 +904,8 @@ const PrivacyPolicyModal: React.FC<{
 // ─────────────────────────────────────────────────────────────
 export default function ProfileScreen(): React.ReactElement {
   const { t, colors, language } = useAppSettings();
+  const extra = EXTRA[language] ?? EXTRA.en;
+  const navRouter = useRouter();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -636,29 +917,32 @@ export default function ProfileScreen(): React.ReactElement {
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
 
   useEffect(() => {
+    let active = true;
+
     const fetchProfile = async () => {
       try {
         const user = auth.currentUser;
         if (!user) {
-          router.replace("/src/screens/LoginScreen");
+          router.replace("/src/screens/LoginScreen" as any);
           return;
         }
         const snap = await getDoc(doc(db, "consumers", user.uid));
+        if (!active) return;
+
         if (snap.exists()) {
           const d = snap.data();
           setProfile({
-            fullName: d.fullName || user.displayName || t.consumer,
+            fullName: d.fullName || user.displayName || "",
             email: d.email || user.email || "",
             mobileNumber: d.mobileNumber || d.phone || "",
             consumerId: d.consumerId || "—",
             cnicNumber: d.cnicNumber || "—",
             role: d.role || "consumer",
             createdAt: d.createdAt,
-            passwordEncoded: d.passwordEncoded || "",
           });
         } else {
           setProfile({
-            fullName: user.displayName || t.consumer,
+            fullName: user.displayName || "",
             email: user.email || "",
             mobileNumber: "",
             consumerId: "—",
@@ -670,10 +954,14 @@ export default function ProfileScreen(): React.ReactElement {
       } catch (err) {
         console.error("Profile fetch error:", err);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
+
     fetchProfile();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleLogout = async () => {
@@ -681,9 +969,12 @@ export default function ProfileScreen(): React.ReactElement {
     setLoggingOut(true);
     try {
       await signOut(auth);
-      router.replace("/src/Admin/escalate");
-    } catch {
-      Alert.alert(t.error, "Logout failed. Please try again.");
+      // FIX: pehle yahan "/src/Admin/escalate" tha, isliye logout ke baad
+      // escalate screen khul jati thi. Ab login screen par jayega.
+      router.replace("/src/screens/LoginScreen" as any);
+    } catch (err) {
+      console.error("Logout error:", err);
+      Alert.alert(t.error, extra.logoutFailed);
     } finally {
       setLoggingOut(false);
     }
@@ -691,14 +982,18 @@ export default function ProfileScreen(): React.ReactElement {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color="#E53E3E" />
-        <Text style={styles.loadingText}>{t.loading}</Text>
+        <Text style={[styles.loadingText, { color: colors.subText }]}>
+          {t.loading}
+        </Text>
       </View>
     );
   }
 
-  const firstName = profile?.fullName?.split(" ")[0] ?? t.consumer;
+  const displayName = profile?.fullName || t.consumer;
+  const firstName = displayName.split(" ")[0];
+  const roleLabel = profile?.role ? capitalize(profile.role) : t.consumer;
 
   return (
     <SafeAreaView
@@ -714,17 +1009,13 @@ export default function ProfileScreen(): React.ReactElement {
       >
         {/* ── Profile Header ── */}
         <View style={styles.profileHeader}>
-          <AvatarInitials name={profile?.fullName || "?"} />
+          <AvatarInitials name={displayName} />
           <Text style={[styles.profileName, { color: colors.text }]}>
-            {profile?.fullName || t.consumer}
+            {displayName}
           </Text>
           <View style={styles.roleBadge}>
             <Ionicons name="shield-checkmark" size={12} color="#2B4C7E" />
-            <Text style={styles.roleBadgeText}>
-              {profile?.role
-                ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
-                : t.consumer}
-            </Text>
+            <Text style={styles.roleBadgeText}>{roleLabel}</Text>
           </View>
         </View>
 
@@ -770,15 +1061,13 @@ export default function ProfileScreen(): React.ReactElement {
             icon="notifications-outline"
             label={t.notifications}
             subtitle={t.notificationsSub}
-            onPress={() =>
-              Alert.alert(t.notifTitle, t.notifBody, [{ text: t.ok }])
-            }
+            onPress={() => navRouter.push("/src/Consumer/NotificationsScreen" as any)}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <MenuRow
             icon="settings-outline"
             label={t.systemSettings}
-            onPress={() => setShowSettingsModal(true)} // ← opens new modal
+            onPress={() => setShowSettingsModal(true)}
           />
         </View>
 
@@ -845,10 +1134,10 @@ export default function ProfileScreen(): React.ReactElement {
 
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: colors.subText }]}>
-            © 2026 ElectraGuard System
+            {extra.footerLine1}
           </Text>
           <Text style={[styles.footerText, { color: colors.subText }]}>
-            Government Enterprise Solution
+            {extra.footerLine2}
           </Text>
         </View>
       </ScrollView>
@@ -865,7 +1154,6 @@ export default function ProfileScreen(): React.ReactElement {
       />
       <ChangePasswordModal
         visible={showPassModal}
-        profile={profile}
         onClose={() => setShowPassModal(false)}
       />
       <PrivacyPolicyModal
@@ -881,18 +1169,27 @@ export default function ProfileScreen(): React.ReactElement {
         onRequestClose={() => setShowLogoutModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
+          <View style={[styles.modalBox, { backgroundColor: colors.card }]}>
             <View style={styles.modalIconBox}>
               <Ionicons name="log-out-outline" size={28} color="#E53E3E" />
             </View>
-            <Text style={styles.modalTitle}>{t.logoutConfirm}</Text>
-            <Text style={styles.modalMessage}>{t.logoutMessage}</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              {t.logoutConfirm}
+            </Text>
+            <Text style={[styles.modalMessage, { color: colors.subText }]}>
+              {t.logoutMessage}
+            </Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={styles.modalCancelBtn}
+                style={[
+                  styles.modalCancelBtn,
+                  { backgroundColor: colors.background },
+                ]}
                 onPress={() => setShowLogoutModal(false)}
               >
-                <Text style={styles.modalCancelText}>{t.cancel}</Text>
+                <Text style={[styles.modalCancelText, { color: colors.text }]}>
+                  {t.cancel}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.modalLogoutBtn}
@@ -910,6 +1207,8 @@ export default function ProfileScreen(): React.ReactElement {
 
 // ─────────────────────────────────────────────────────────────
 // STYLES
+// (Sirf layout/static styles yahan hain. Theme wale colors
+//  upar inline `colors.xxx` se apply hote hain.)
 // ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
@@ -920,7 +1219,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  loadingText: { color: "#718096", fontSize: 14 },
+  loadingText: { fontSize: 14 },
 
   profileHeader: { alignItems: "center", paddingVertical: 24 },
   avatarCircle: {
@@ -954,7 +1253,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#A0AEC0",
     textTransform: "uppercase",
     letterSpacing: 0.8,
     marginBottom: 8,
@@ -964,6 +1262,7 @@ const styles = StyleSheet.create({
 
   card: {
     borderRadius: 14,
+    borderWidth: 1,
     marginBottom: 16,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
@@ -982,14 +1281,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: "#F7F8FC",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
   },
   menuTextBox: { flex: 1 },
   menuLabel: { fontSize: 14, fontWeight: "600" },
-  menuSubtitle: { fontSize: 12, color: "#718096", marginTop: 1 },
+  menuSubtitle: { fontSize: 12, marginTop: 1 },
   divider: { height: 1, marginLeft: 60 },
 
   logoutBtn: {
@@ -1022,7 +1320,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   modalBox: {
-    backgroundColor: "#fff",
     borderRadius: 20,
     padding: 24,
     width: "100%",
@@ -1045,12 +1342,10 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#1A202C",
     marginBottom: 8,
   },
   modalMessage: {
     fontSize: 13,
-    color: "#718096",
     textAlign: "center",
     lineHeight: 20,
     marginBottom: 16,
@@ -1058,12 +1353,11 @@ const styles = StyleSheet.create({
   modalButtons: { flexDirection: "row", gap: 10, width: "100%" },
   modalCancelBtn: {
     flex: 1,
-    backgroundColor: "#F7F8FC",
     borderRadius: 10,
     paddingVertical: 13,
     alignItems: "center",
   },
-  modalCancelText: { color: "#4A5568", fontWeight: "700", fontSize: 14 },
+  modalCancelText: { fontWeight: "700", fontSize: 14 },
   modalLogoutBtn: {
     flex: 1,
     backgroundColor: "#2B4C7E",
@@ -1100,14 +1394,12 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: 11,
-    color: "#A0AEC0",
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   infoValue: {
     fontSize: 14,
-    color: "#1A202C",
     fontWeight: "600",
     marginTop: 1,
   },
@@ -1117,9 +1409,7 @@ const styles = StyleSheet.create({
     width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F9FAFB",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
     borderRadius: 8,
     marginBottom: 10,
   },
@@ -1128,14 +1418,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: "#1F2933",
   },
 
   // Settings modal
   settingsSection: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#A0AEC0",
     textTransform: "uppercase",
     letterSpacing: 0.8,
     alignSelf: "flex-start",
@@ -1155,11 +1443,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#F9FAFB",
   },
   optionPillActive: { backgroundColor: "#0B3C5D", borderColor: "#0B3C5D" },
-  optionPillText: { fontSize: 13, color: "#374151", fontWeight: "600" },
+  optionPillText: { fontSize: 13, fontWeight: "600" },
   optionPillTextActive: { color: "#fff" },
   themeRow: { flexDirection: "row", gap: 8, width: "100%" },
   themeCard: {
@@ -1169,12 +1455,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#F9FAFB",
     gap: 4,
   },
   themeCardActive: { backgroundColor: "#0B3C5D", borderColor: "#0B3C5D" },
-  themeCardText: { fontSize: 11, fontWeight: "700", color: "#718096" },
+  themeCardText: { fontSize: 11, fontWeight: "700" },
   themeCardTextActive: { color: "#fff" },
   settingsInfoRow: {
     flexDirection: "row",
@@ -1183,5 +1467,5 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     marginTop: 10,
   },
-  settingsInfoText: { fontSize: 12, color: "#718096" },
+  settingsInfoText: { fontSize: 12 },
 });
