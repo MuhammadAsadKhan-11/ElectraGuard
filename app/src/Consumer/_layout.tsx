@@ -66,6 +66,8 @@ export default function ConsumerLayout() {
       <Tabs.Screen name="DetectionResultScreen" options={{ href: null }} />
       <Tabs.Screen name="ChatbotScreen"         options={{ href: null }} />
       <Tabs.Screen name="supportscreen"         options={{ href: null }} />
+      <Tabs.Screen name="ReportDetailScreen"      options={{ href: null }} />
+      <Tabs.Screen name="NotificationsScreen"        options={{ href: null }} />  
     </Tabs>
   );
 }

@@ -300,7 +300,7 @@ export default function DashboardScreen() {
         {!loading && !data && (
           <View style={styles.centerBox}>
             <Text style={[styles.errorText, { color: colors.text }]}>
-              Dashboard load nahi ho saka
+              Dashboard could not be loaded
             </Text>
             {!!error && (
               <Text style={[styles.errorDetail, { color: colors.subText }]}>

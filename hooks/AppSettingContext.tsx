@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { I18nManager, useColorScheme } from 'react-native';
+import { useColorScheme } from 'react-native';
 import {
   Language,
   Theme,
@@ -99,15 +99,15 @@ export const AppSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   // ── Set language + save ────────────────────────────────────
+  // NOTE: Hum jaan boojh kar I18nManager.forceRTL() call NAHI karte.
+  // Woh poore app ka layout (headers, rows, icons) mirror kar deta hai
+  // aur sirf native restart ke baad lagu hota hai — jis se back
+  // arrows/headers ulte dikhte hain. Arabic sirf TEXT-level RTL
+  // (translations + manual textAlign/writingDirection jahan zaroorat ho)
+  // se handle hota hai; layout hamesha LTR rehta hai.
   const setLanguage = useCallback(async (lang: Language) => {
     setLangState(lang);
     await AsyncStorage.setItem('app_language', lang);
-    // Apply RTL layout direction
-    const rtl = isRTL(lang);
-    if (I18nManager.isRTL !== rtl) {
-      I18nManager.forceRTL(rtl);
-      // Note: full RTL flip requires app restart; strings will switch immediately
-    }
   }, []);
 
   // ── Set theme + save ───────────────────────────────────────
@@ -124,6 +124,8 @@ export const AppSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const colors = resolvedDark ? darkColors : lightColors;
   const t      = translationsMap[language];
+  // isRtl ab sirf informational hai (Arabic text ka alignment kahin
+  // manually set karna ho to use karo) — layout isay force nahi karta.
   const isRtl  = isRTL(language);
 
   return (

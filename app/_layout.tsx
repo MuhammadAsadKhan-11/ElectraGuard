@@ -13,10 +13,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, Stack } from 'expo-router';
 import { isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import React, { useEffect } from 'react';
-import { ActivityIndicator, Linking, View } from 'react-native';
+import { ActivityIndicator, I18nManager, Linking, View } from 'react-native';
 import { auth } from '../firebaseConfig';
 
 export { ErrorBoundary } from 'expo-router';
+
+// ─────────────────────────────────────────────────────────────
+// RTL FIX: app ko hamesha LTR rakho, chahe pehle kisi screen ne
+// (ya Arabic language select hone par) RTL force kar diya ho.
+// Yeh component render hone se PEHLE, module load hote hi chalta hai.
+// Flag yahan set hoga, lekin poora effect agle app-restart par aayega
+// (RTL native layer mein stored hoti hai, hot-reload se nahi badalti).
+// ─────────────────────────────────────────────────────────────
+if (I18nManager.isRTL || I18nManager.allowRTL) {
+  I18nManager.allowRTL(false);
+  I18nManager.forceRTL(false);
+}
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
