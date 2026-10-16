@@ -14,6 +14,11 @@
       "channel": "preview",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://adminbackendapi-3y0m.onrender.com",
+        "EXPO_PUBLIC_ML_URL": "https://electra-api-2.onrender.com",
+        "EXPO_PUBLIC_CHATBOT_URL": "https://electraguard-backend-1.onrender.com"
       }
     },
     "production": {
