@@ -31,6 +31,26 @@ const EMAILJS_PUBLIC_KEY = process.env.EXPO_PUBLIC_EMAILJS_PUBLIC_KEY!;
 const EMAILJS_PRIVATE_KEY = process.env.EXPO_PUBLIC_EMAILJS_PRIVATE_KEY!;
 const EMAILJS_CONSUMER_TEMPLATE_ID = process.env.EXPO_PUBLIC_EMAILJS_CONSUMER_TEMPLATE_ID!;
 
+// ── Field rules ────────────────────────────────────────────────────────────────
+const CONSUMER_ID_MAX = 12; // letters + digits only
+const PASSWORD_MIN = 8;
+const PASSWORD_MAX = 15;
+
+// Returns an error message, or null if the password is valid.
+// Rule: 8-15 chars with lowercase + uppercase + number + special character.
+const getPasswordError = (pw: string): string | null => {
+  if (pw.length < PASSWORD_MIN)
+    return `Password must be at least ${PASSWORD_MIN} characters.`;
+  if (pw.length > PASSWORD_MAX)
+    return `Password must be at most ${PASSWORD_MAX} characters.`;
+  if (!/[a-z]/.test(pw)) return "Password must include a lowercase letter.";
+  if (!/[A-Z]/.test(pw)) return "Password must include an uppercase letter.";
+  if (!/[0-9]/.test(pw)) return "Password must include a number.";
+  if (!/[^A-Za-z0-9]/.test(pw))
+    return "Password must include a special character (e.g. @, #, !).";
+  return null;
+};
+
 const generateOTP = (): string =>
   Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -62,26 +82,34 @@ export default function RegisterScreen() {
     password: "",
     confirmPassword: "",
   });
-  
+
   const [cnicError, setCnicError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
 
- const updateField = (key: string, value: string) =>
-  setForm((prev) => ({ ...prev, [key]: value }));
+  const updateField = (key: string, value: string) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
 
-const handleCnicChange = (value: string) => {
-  const digitsOnly = value.replace(/[^0-9]/g, "");
-  if (digitsOnly.length > 13) {
-    setCnicError("CNIC number must be exactly 13 digits.");
-    updateField("cnicNumber", digitsOnly.slice(0, 13));
-  } else {
-    setCnicError("");
-    updateField("cnicNumber", digitsOnly);
-  }
-};
+  const handleCnicChange = (value: string) => {
+    const digitsOnly = value.replace(/[^0-9]/g, "");
+    if (digitsOnly.length > 13) {
+      setCnicError("CNIC number must be exactly 13 digits.");
+      updateField("cnicNumber", digitsOnly.slice(0, 13));
+    } else {
+      setCnicError("");
+      updateField("cnicNumber", digitsOnly);
+    }
+  };
+
+  // Consumer ID: only letters and digits (no @, ., spaces or other symbols), max 12
+  const handleConsumerIdChange = (value: string) => {
+    updateField(
+      "consumerId",
+      value.replace(/[^a-zA-Z0-9]/g, "").slice(0, CONSUMER_ID_MAX),
+    );
+  };
 
   const validateForm = () => {
     const {
@@ -105,16 +133,24 @@ const handleCnicChange = (value: string) => {
       Alert.alert("Error", "Please fill in all fields.");
       return false;
     }
+    if (!/^[a-zA-Z0-9]{1,12}$/.test(consumerId)) {
+      Alert.alert(
+        "Invalid Consumer ID",
+        "Consumer ID can only contain letters and digits (maximum 12).",
+      );
+      return false;
+    }
     if (cnicNumber.length !== 13) {
-    Alert.alert("Error", "CNIC number must be exactly 13 digits.");
-    return false;
-  }
+      Alert.alert("Error", "CNIC number must be exactly 13 digits.");
+      return false;
+    }
     if (password !== confirmPassword) {
       Alert.alert("Error", "Passwords do not match.");
       return false;
     }
-    if (password.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters.");
+    const passwordError = getPasswordError(password);
+    if (passwordError) {
+      Alert.alert("Weak Password", passwordError);
       return false;
     }
     if (!agreed) {
@@ -146,12 +182,12 @@ const handleCnicChange = (value: string) => {
             : "This email is already registered with a different account.",
           allMatch
             ? [
-              {
-                text: "Go to Login",
-                onPress: () => router.replace("/src/screens/LoginScreen"),
-              },
-              { text: "Cancel", style: "cancel" },
-            ]
+                {
+                  text: "Go to Login",
+                  onPress: () => router.replace("/src/screens/LoginScreen"),
+                },
+                { text: "Cancel", style: "cancel" },
+              ]
             : [{ text: "OK", style: "cancel" }],
         );
         setLoading(false);
@@ -263,7 +299,7 @@ const handleCnicChange = (value: string) => {
     },
     {
       key: "consumerId",
-      placeholder: "Enter your Consumer ID",
+      placeholder: "Consumer ID (letters & digits, max 12)",
       keyboard: "default",
     },
     { key: "cnicNumber", placeholder: "12345-1234567-1", keyboard: "numeric" },
@@ -296,26 +332,45 @@ const handleCnicChange = (value: string) => {
       </Text>
 
       {fields.map(({ key, placeholder, keyboard }) => (
-  <View key={key} style={{ width: "100%" }}>
-    <TextInput
-      style={styles.input}
-      placeholder={placeholder}
-      placeholderTextColor="#9CA3AF"
-      value={form[key as keyof typeof form]}
-      onChangeText={(v) =>
-        key === "cnicNumber" ? handleCnicChange(v) : updateField(key, v)
-      }
-      keyboardType={keyboard as any}
-      autoCapitalize="none"
-      maxLength={key === "cnicNumber" ? 13 : undefined}
-    />
-    {key === "cnicNumber" && cnicError ? (
-      <Text style={{ color: "red", fontSize: 12, marginTop: -8, marginBottom: 8, marginLeft: 4 }}>
-        {cnicError}
-      </Text>
-    ) : null}
-  </View>
-))}
+        <View key={key} style={{ width: "100%" }}>
+          <TextInput
+            style={styles.input}
+            placeholder={placeholder}
+            placeholderTextColor="#9CA3AF"
+            value={form[key as keyof typeof form]}
+            onChangeText={(v) =>
+              key === "cnicNumber"
+                ? handleCnicChange(v)
+                : key === "consumerId"
+                  ? handleConsumerIdChange(v)
+                  : updateField(key, v)
+            }
+            keyboardType={keyboard as any}
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={
+              key === "cnicNumber"
+                ? 13
+                : key === "consumerId"
+                  ? CONSUMER_ID_MAX
+                  : undefined
+            }
+          />
+          {key === "cnicNumber" && cnicError ? (
+            <Text
+              style={{
+                color: "red",
+                fontSize: 12,
+                marginTop: -8,
+                marginBottom: 8,
+                marginLeft: 4,
+              }}
+            >
+              {cnicError}
+            </Text>
+          ) : null}
+        </View>
+      ))}
 
       {(
         [
@@ -341,6 +396,9 @@ const handleCnicChange = (value: string) => {
             value={form[field as keyof typeof form]}
             onChangeText={(v) => updateField(field, v)}
             secureTextEntry={!show}
+            maxLength={PASSWORD_MAX}
+            autoCapitalize="none"
+            autoCorrect={false}
           />
           <TouchableOpacity onPress={() => setShow(!show)}>
             <Ionicons
@@ -351,6 +409,11 @@ const handleCnicChange = (value: string) => {
           </TouchableOpacity>
         </View>
       ))}
+
+      <Text style={styles.passwordHint}>
+        Password: {PASSWORD_MIN}-{PASSWORD_MAX} characters, with an uppercase
+        letter, a lowercase letter, a number and a special character.
+      </Text>
 
       <TouchableOpacity
         style={styles.checkboxRow}
@@ -446,6 +509,16 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 14,
     color: "#1F2933",
+  },
+  passwordHint: {
+    width: "100%",
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: -6,
+    marginBottom: 14,
+    marginLeft: 4,
+    lineHeight: 17,
   },
   checkboxRow: {
     flexDirection: "row",
