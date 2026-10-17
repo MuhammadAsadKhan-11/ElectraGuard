@@ -17,48 +17,89 @@ import { SafeAreaView } from "react-native-safe-area-context";
 /* ─────────────────────────────────────────────────────────────
    RENDER BACKEND URL
 ───────────────────────────────────────────────────────────── */
-const API_URL = "https://electraguard-backend-1.onrender.com/chat"; // ✅ /chat route added
+const API_URL = "https://electraguard-backend-1.onrender.com/chat";
+
+// Render free tier can take 30-60s to wake up, so allow a long timeout
+const REQUEST_TIMEOUT_MS = 90_000;
+// After this long, tell the user the server is waking up
+const SLOW_NOTICE_MS = 8_000;
 
 /* ─────────────────────────────────────────────────────────────
    Backend Chat Function
 ───────────────────────────────────────────────────────────── */
-const getGeminiResponse = async (message: string): Promise<string> => {
+type BotResult = { text: string; sources: string[] };
+
+// Gemini often answers with Markdown (**bold**, "* " bullets, "# " headings).
+// <Text> shows them as raw symbols, so tidy them up.
+const cleanReply = (t: string): string =>
+  t
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/^\s*[*-]\s+/gm, "• ")
+    .replace(/^#{1,6}\s*/gm, "")
+    .trim();
+
+// "lesco_home" -> "LESCO", "ke_faqs" -> "KE", "nepra_home" -> "NEPRA"
+const sourceLabel = (s: string): string => s.split("_")[0].toUpperCase();
+
+const getGeminiResponse = async (
+  message: string,
+  onSlow?: () => void
+): Promise<BotResult> => {
+  const controller = new AbortController();
+  const timeoutTimer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const slowTimer = setTimeout(() => onSlow?.(), SLOW_NOTICE_MS);
+
   try {
     const response = await fetch(API_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
+      signal: controller.signal as any, // RN vs DOM AbortSignal type mismatch
     });
 
-    // ✅ Pehle text lo, phir parse karo - JSON error avoid hoga
+    // Read as text first, then parse, so an HTML error page can't crash JSON.parse
     const text = await response.text();
 
-    // ✅ Check karo HTML toh nahi aa raha (backend down hone pe)
-    if (text.startsWith("<") || text.startsWith("<!")) {
+    if (text.startsWith("<")) {
       console.log("Backend returned HTML - server might be down or wrong URL");
-      return "Server is currently unavailable. Please try again later.";
+      return {
+        text: "Server is currently unavailable. Please try again later.",
+        sources: [],
+      };
     }
 
-    // ✅ Safe JSON parse
-    let data: { reply?: string };
+    let data: { reply?: string; sources?: string[]; error?: string };
     try {
       data = JSON.parse(text);
     } catch {
       console.log("Invalid JSON received:", text);
-      return "Received invalid response from server.";
+      return { text: "Received invalid response from server.", sources: [] };
     }
 
+    // Backend errors look like { "error": "..." } (400, 429, 500)
     if (!response.ok) {
-      return "Server error. Please try again.";
+      return {
+        text: data.error ?? "Server error. Please try again.",
+        sources: [],
+      };
     }
 
-    return data.reply ?? "No response received.";
-
-  } catch (error) {
+    return {
+      text: cleanReply(data.reply ?? "No response received."),
+      sources: Array.isArray(data.sources) ? data.sources : [],
+    };
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      return {
+        text: "The server took too long to respond. Please try again.",
+        sources: [],
+      };
+    }
     console.log("Backend Error:", error);
-    return "Unable to connect right now.";
+    return { text: "Unable to connect right now.", sources: [] };
+  } finally {
+    clearTimeout(timeoutTimer);
+    clearTimeout(slowTimer);
   }
 };
 
@@ -70,6 +111,7 @@ type Message = {
   text: string;
   sender: "bot" | "user";
   time: string;
+  sources?: string[];
 };
 
 /* ─────────────────────────────────────────────────────────────
@@ -101,6 +143,7 @@ const BotAvatar = () => (
 
 const MessageBubble = ({ item }: { item: Message }) => {
   const isUser = item.sender === "user";
+  const sources = item.sources ? Array.from(new Set(item.sources.map(sourceLabel))) : [];
 
   return (
     <View
@@ -126,6 +169,10 @@ const MessageBubble = ({ item }: { item: Message }) => {
           >
             {item.text}
           </Text>
+
+          {!isUser && sources.length > 0 && (
+            <Text style={styles.sourcesText}>Sources: {sources.join(", ")}</Text>
+          )}
         </View>
 
         <Text
@@ -182,13 +229,25 @@ export default function SupportChatScreen() {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
 
-    const botReply = await getGeminiResponse(trimmed);
+    // If the server is slow (Render waking up), update the typing bubble
+    const onSlow = () => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === loadingId
+            ? { ...msg, text: "Waking up the server, this can take up to a minute..." }
+            : msg
+        )
+      );
+    };
+
+    const result = await getGeminiResponse(trimmed, onSlow);
 
     const botMsg: Message = {
       id: loadingId,
-      text: botReply,
+      text: result.text,
       sender: "bot",
       time: getTime(),
+      sources: result.sources,
     };
 
     setMessages((prev) =>
@@ -252,6 +311,7 @@ export default function SupportChatScreen() {
             value={inputText}
             onChangeText={setInputText}
             onSubmitEditing={sendMessage}
+            maxLength={2000} // backend rejects messages longer than 2000 characters
             multiline
             editable={!isSending}
           />
@@ -369,6 +429,13 @@ const styles = StyleSheet.create({
 
   bubbleTextUser: {
     color: WHITE,
+  },
+
+  sourcesText: {
+    marginTop: 8,
+    fontSize: 11,
+    color: TEAL,
+    fontWeight: "600",
   },
 
   timeText: {
