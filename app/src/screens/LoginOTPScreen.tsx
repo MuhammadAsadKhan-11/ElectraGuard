@@ -191,10 +191,10 @@ export default function LoginOTPScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
-        <Text style={styles.headerLabel}>
+        {/* i changed this because it is showing in the heading of the page */}
+        {/* <Text style={styles.headerLabel}>
           {isAdmin ? "Admin Authentication" : "Login Authentication"}
-        </Text>
+        </Text> */}
 
         <View style={styles.logoContainer}>
           <Image

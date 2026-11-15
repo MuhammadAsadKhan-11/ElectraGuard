@@ -991,10 +991,11 @@ export default function ProfileScreen(): React.ReactElement {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Screen title */}
-        <Text style={[styles.screenTitle, { color: colors.subText }]}>
+        {/* commented this because this is a title  */}
+        {/* Screen title  */}
+        {/* <Text style={[styles.screenTitle, { color: colors.subText }]}>
           {extra.adminProfile}
-        </Text>
+        </Text> */}
 
         {/* Header card */}
         <View style={[styles.headerCard, { backgroundColor: colors.card }]}>
