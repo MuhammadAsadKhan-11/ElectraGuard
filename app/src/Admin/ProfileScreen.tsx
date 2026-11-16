@@ -1031,6 +1031,7 @@ export default function ProfileScreen(): React.ReactElement {
         contentContainerStyle={[styles.scrollContent, { backgroundColor: colors.background }]}
         showsVerticalScrollIndicator={false}
       >
+<<<<<<< HEAD
         <View
           style={[
             styles.headerCard,
@@ -1050,6 +1051,18 @@ export default function ProfileScreen(): React.ReactElement {
         >
           <View style={[styles.avatarCircle, { backgroundColor: "#FFFFFF" }]}>
             <Ionicons name="person" size={26} color="#111111" />
+=======
+        {/* commented this because this is a title  */}
+        {/* Screen title  */}
+        {/* <Text style={[styles.screenTitle, { color: colors.subText }]}>
+          {extra.adminProfile}
+        </Text> */}
+
+        {/* Header card */}
+        <View style={[styles.headerCard, { backgroundColor: colors.card }]}>
+          <View style={styles.avatarCircle}>
+            <Ionicons name="person-outline" size={26} color="#fff" />
+>>>>>>> origin/main
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.profileName, { color: "#FFFFFF" }]}>{displayName}</Text>

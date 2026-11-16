@@ -140,6 +140,7 @@ export default function LoginOTPScreen() {
         onPress={handleVerify}
         disabled={loading || otp.length < 6}
       >
+<<<<<<< HEAD
         {loading ? (
           <ActivityIndicator color="#111111" />
         ) : (
@@ -147,6 +148,115 @@ export default function LoginOTPScreen() {
             <Ionicons name="shield-checkmark-outline" size={18} color="#111111" />
             <Text style={styles.buttonText}>Verify and continue</Text>
           </>
+=======
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        {/* i changed this because it is showing in the heading of the page */}
+        {/* <Text style={styles.headerLabel}>
+          {isAdmin ? "Admin Authentication" : "Login Authentication"}
+        </Text> */}
+
+        <View style={styles.logoContainer}>
+          <Image
+            source={require("../../../assets/logo.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
+
+        <Text style={styles.brandName}>Electra Guard</Text>
+        <Text style={styles.subtitle}>
+          Utility Theft Detection & Analytics System
+        </Text>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>{isAdmin ? "Admin Email" : "Email"}</Text>
+          <TextInput
+            style={styles.input}
+            value={email}
+            editable={false}
+            placeholderTextColor="#9CA3AF"
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Password</Text>
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              value={password}
+              editable={false}
+              secureTextEntry={!showPassword}
+              placeholderTextColor="#9CA3AF"
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              <Ionicons
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={20}
+                color="#6B7280"
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Email Verification Code</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter 6-digit code"
+            placeholderTextColor="#9CA3AF"
+            value={otp}
+            onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, ""))}
+            keyboardType="number-pad"
+            maxLength={6}
+          />
+          <Text style={styles.otpNote}>
+            OTP sent to {email}. Valid for 10 minutes.
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.forgotContainer}
+          onPress={() => router.push("/src/screens/ForgotPasswordScreen")}
+        >
+          <Text style={styles.forgotText}>Forgot Password?</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.loginButton}
+          onPress={handleVerify}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.loginButtonText}>Verify & Login</Text>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.resendContainer}>
+          <Text style={styles.resendText}>{"Didn't receive the code? "}</Text>
+          {resendLoading ? (
+            <ActivityIndicator size="small" color="#0B3C5D" />
+          ) : countdown > 0 ? (
+            <Text style={styles.resendCountdown}>Resend in {countdown}s</Text>
+          ) : (
+            <TouchableOpacity onPress={handleResendOTP}>
+              <Text style={styles.resendLink}>Resend OTP</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {!isAdmin && (
+          <Text style={styles.registerText}>
+            {"Don't have an account? "}
+            <Text
+              style={styles.registerLink}
+              onPress={() => router.push("/src/screens/RegisterScreen")}
+            >
+              Register Now
+            </Text>
+          </Text>
+>>>>>>> origin/main
         )}
       </TouchableOpacity>
 
