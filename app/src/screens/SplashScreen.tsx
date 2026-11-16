@@ -1,6 +1,7 @@
 // screens/SplashScreen.tsx
 import { router } from "expo-router";
-import React, { useEffect } from "react";
+import { onAuthStateChanged } from "firebase/auth";
+import React, { useEffect, useRef } from "react";
 import {
   Animated,
   Image,
@@ -9,10 +10,12 @@ import {
   Text,
   View,
 } from "react-native";
+import { auth } from "../../../firebaseConfig";
+import { getSessionStatus, signOutEverywhere } from "../../../hooks/authSession";
 
 export default function SplashScreen() {
-  const fadeAnim = new Animated.Value(0);
-  const scaleAnim = new Animated.Value(0.85);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.85)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -28,12 +31,42 @@ export default function SplashScreen() {
       }),
     ]).start();
 
-    const timer = setTimeout(() => {
-      router.replace("/src/screens/LoginScreen"); // Expo Router path
-    }, 3000);
+    let cancelled = false;
+    let handled = false;
+    // Only the FIRST auth state decides where the app starts. Later changes
+    // (login/logout) are handled by the screens themselves.
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (cancelled || handled) return;
+      handled = true;
+      if (!user) {
+        router.replace("/src/screens/LoginScreen");
+        return;
+      }
+      // A restored session goes straight in only if the backend confirms this
+      // sign-in finished email verification; otherwise sign in again.
+      try {
+        const session = await getSessionStatus();
+        if (cancelled) return;
+        if (session.verified && session.role) {
+          router.replace((session.role === "admin" ? "/src/Admin" : "/src/Consumer") as any);
+          return;
+        }
+      } catch {
+        // backend unreachable: do not let an unverified session through
+      }
+      try {
+        await signOutEverywhere();
+      } catch {
+        // ignore
+      }
+      if (!cancelled) router.replace("/src/screens/LoginScreen");
+    });
 
-    return () => clearTimeout(timer);
-  }, []);
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [fadeAnim, scaleAnim]);
 
   return (
     <View style={styles.container}>

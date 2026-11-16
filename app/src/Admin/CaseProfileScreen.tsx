@@ -1,4 +1,6 @@
 // app/src/Admin/CaseProfileScreen.tsx
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -6,22 +8,35 @@ import {
   Alert,
   Modal,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Colors, getCaseStatusColor, getRiskColor } from "../../../constants/Colors";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { getStrings } from "../../../constants/caseScreensStrings";
 import {
+  CaseStatus,
+  EVIDENCE_MAX_FILES,
+  EVIDENCE_PICKER_TYPES,
+  EvidenceItemDTO,
+  addCaseRemark,
+  addEvidence,
   assignInspector,
+  checkEvidenceFile,
   closeCase,
+  getEvidenceUrl,
+  updateCaseStatus,
   useCaseDetail,
   useInspectors,
 } from "../../../hooks/useCasesApi";
+import { openEvidence } from "../../../utils/evidenceDownload";
+
+const STATUS_OPTIONS: CaseStatus[] = ["Open", "In Progress", "Closed", "Rejected"];
 
 export default function CaseProfileScreen() {
   const router = useRouter();
@@ -37,6 +52,135 @@ export default function CaseProfileScreen() {
 
   const [assignModal, setAssignModal] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
+  const [remark, setRemark] = useState("");
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  // ── Evidence: open / download via short-lived presigned URLs ────
+  const openEvidenceItem = (ev: EvidenceItemDTO) => {
+    if (!caseId) return;
+    router.push({
+      pathname: "/src/Admin/EvidenceViewerScreen",
+      params: ev.url
+        ? { url: ev.url, type: ev.type, name: ev.name }
+        : { caseId, evidenceId: ev.id, type: ev.type, name: ev.name },
+    } as any);
+  };
+
+  const downloadEvidenceItem = async (ev: EvidenceItemDTO) => {
+    if (!caseId || downloading) return;
+    setDownloading(ev.id);
+    try {
+      if (ev.url) {
+        await openEvidence(async () => ({ url: ev.url, expiresIn: 0, fileName: ev.name, contentType: ev.fileType || "" }), "download");
+      } else {
+        await openEvidence((d) => getEvidenceUrl(caseId, ev.id, d), "download");
+      }
+    } catch (err: any) {
+      Alert.alert(S.error, err?.message || "Could not download the file.");
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // ── Evidence: upload more files to this case (S3) + notify consumer ──
+  const uploadPicked = async (files: { uri: string; name: string; mimeType?: string; size?: number | null }[]) => {
+    if (!caseId || !files.length) return;
+    if (files.length > EVIDENCE_MAX_FILES) {
+      Alert.alert(S.error, `Upload at most ${EVIDENCE_MAX_FILES} files at a time.`);
+      return;
+    }
+    const problem = files.map(checkEvidenceFile).find(Boolean);
+    if (problem) {
+      Alert.alert(S.error, problem);
+      return;
+    }
+    try {
+      setBusy(true);
+      setUploadPct(0);
+      await addEvidence(caseId, files, "", (f) => setUploadPct(f));
+      await reload();
+      Alert.alert("Evidence uploaded", `${files.length} file(s) added. The consumer has been notified.`);
+    } catch (err: any) {
+      Alert.alert(S.error, err?.message || "Upload failed.");
+    } finally {
+      setBusy(false);
+      setUploadPct(null);
+    }
+  };
+
+  const pickEvidence = () => {
+    Alert.alert("Add evidence", "Choose what to upload", [
+      {
+        text: "Images",
+        onPress: async () => {
+          const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (perm.status !== "granted") {
+            Alert.alert("Permission Required", "Please allow access to your photo library.");
+            return;
+          }
+          const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsMultipleSelection: true, quality: 0.85 });
+          if (!res.canceled) {
+            uploadPicked(
+              res.assets.map((a, i) => ({
+                uri: a.uri,
+                name: a.fileName || `image_${Date.now()}_${i}.jpg`,
+                mimeType: a.mimeType || "image/jpeg",
+                size: a.fileSize,
+              })),
+            );
+          }
+        },
+      },
+      {
+        text: "Documents",
+        onPress: async () => {
+          const res = await DocumentPicker.getDocumentAsync({ type: EVIDENCE_PICKER_TYPES, multiple: true, copyToCacheDirectory: true });
+          if (!res.canceled) {
+            uploadPicked(res.assets.map((a) => ({ uri: a.uri, name: a.name, mimeType: a.mimeType, size: a.size })));
+          }
+        },
+      },
+      { text: S.cancel, style: "cancel" },
+    ]);
+  };
+
+  // ── Status + remarks (both notify the consumer) ──────────────────
+  const handleStatus = (status: CaseStatus) => {
+    if (!caseId || !caseItem || caseItem.status === status) return;
+    Alert.alert("Change status", `Set case status to "${status}"? The consumer will be notified.`, [
+      { text: S.cancel, style: "cancel" },
+      {
+        text: "Update",
+        onPress: async () => {
+          try {
+            setBusy(true);
+            await updateCaseStatus(caseId, status);
+            await reload();
+          } catch (err: any) {
+            Alert.alert(S.error, err?.message);
+          } finally {
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleRemark = async () => {
+    if (!caseId || !remark.trim()) return;
+    try {
+      setBusy(true);
+      await addCaseRemark(caseId, remark.trim(), true);
+      setRemark("");
+      await reload();
+      Alert.alert("Update sent", "The remark was added to the case and sent to the consumer.");
+    } catch (err: any) {
+      Alert.alert(S.error, err?.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // ── Fix: use router.canGoBack()/back() (works under Expo Router,
   // unlike the old navigation.goBack() which had no `navigation` prop here
@@ -250,15 +394,25 @@ export default function CaseProfileScreen() {
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <View style={styles.evidenceHeader}>
             <Text style={[styles.cardTitle, { color: colors.text }]}>{S.evidence(caseItem.evidence.length)}</Text>
+            <TouchableOpacity style={styles.assignModalBtn} onPress={pickEvidence} disabled={busy}>
+              <Text style={styles.assignModalBtnText}>
+                {uploadPct !== null ? `Uploading ${Math.round(uploadPct * 100)}%` : "+ Add"}
+              </Text>
+            </TouchableOpacity>
           </View>
+          {uploadPct !== null && (
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${Math.round(uploadPct * 100)}%` }]} />
+            </View>
+          )}
           {caseItem.evidence.length === 0 ? (
             <Text style={[styles.noEvidence, { color: colors.subText }]}>{S.noEvidence}</Text>
           ) : (
             caseItem.evidence.map((ev, i) => (
               <TouchableOpacity
-                key={i}
+                key={ev.id || i}
                 style={styles.evidenceItem}
-                onPress={() => router.push({ pathname: "/src/Admin/EvidenceViewerScreen", params: { url: ev.url, type: ev.type, name: ev.name } } as any)}
+                onPress={() => openEvidenceItem(ev)}
               >
                 <View style={styles.evidenceIconBox}>
                   <Text style={styles.evidenceIcon}>{ev.type === "image" ? "🖼" : "📄"}</Text>
@@ -269,8 +423,16 @@ export default function CaseProfileScreen() {
                   </Text>
                   <Text style={[styles.evidenceMeta, { color: colors.subText }]}>
                     {ev.uploadedBy || "Admin"} • {ev.date || caseItem.createdAt}
+                    {ev.size ? ` • ${(ev.size / 1048576).toFixed(ev.size > 1048576 ? 1 : 2)} MB` : ""}
                   </Text>
                 </View>
+                <TouchableOpacity onPress={() => downloadEvidenceItem(ev)} hitSlop={8} style={styles.downloadBtn}>
+                  {downloading === ev.id ? (
+                    <ActivityIndicator size="small" color={Colors.primary} />
+                  ) : (
+                    <Text style={styles.downloadText}>⬇</Text>
+                  )}
+                </TouchableOpacity>
               </TouchableOpacity>
             ))
           )}
@@ -299,6 +461,43 @@ export default function CaseProfileScreen() {
           )}
         </View>
 
+        {/* Case update: status + remark (consumer is notified) */}
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Update case</Text>
+          <View style={styles.statusRow}>
+            {STATUS_OPTIONS.map((st) => {
+              const active = caseItem.status === st;
+              const c = getCaseStatusColor(st);
+              return (
+                <TouchableOpacity
+                  key={st}
+                  style={[styles.statusChip, { borderColor: c }, active && { backgroundColor: c }]}
+                  onPress={() => handleStatus(st)}
+                  disabled={busy || active}
+                >
+                  <Text style={[styles.statusChipText, { color: active ? "#FFFFFF" : c }]}>{st}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TextInput
+            style={[styles.remarkInput, { color: colors.text, borderColor: colors.border }]}
+            placeholder="Remark or instruction for the consumer"
+            placeholderTextColor={Colors.textSecondary}
+            value={remark}
+            onChangeText={setRemark}
+            multiline
+            maxLength={2000}
+          />
+          <TouchableOpacity
+            style={[styles.sendRemarkBtn, (!remark.trim() || busy) && { opacity: 0.5 }]}
+            onPress={handleRemark}
+            disabled={!remark.trim() || busy}
+          >
+            {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.actionBtnText}>Send update to consumer</Text>}
+          </TouchableOpacity>
+        </View>
+
         {/* Actions */}
         <View style={styles.actionRow}>
           <TouchableOpacity
@@ -325,6 +524,15 @@ export default function CaseProfileScreen() {
 
 // ─── Styles (unchanged, back-arrow style untouched) ─────────────
 const styles = StyleSheet.create({
+  progressTrack: { height: 6, backgroundColor: "#E5E7EB", borderRadius: 3, overflow: "hidden", marginBottom: 10 },
+  progressFill: { height: 6, backgroundColor: Colors.primary },
+  downloadBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  downloadText: { fontSize: 18, color: Colors.primary },
+  statusRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10, marginBottom: 12 },
+  statusChip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
+  statusChipText: { fontSize: 12, fontWeight: "700" },
+  remarkInput: { borderWidth: 1, borderRadius: 12, padding: 12, minHeight: 70, textAlignVertical: "top", fontSize: 14 },
+  sendRemarkBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 12, alignItems: "center", marginTop: 10 },
   safe: { flex: 1, backgroundColor: Colors.bg },
   loadingBox: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },
   loadingText: { fontSize: 15, color: Colors.textSecondary },
@@ -334,7 +542,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     padding: 16,
     margin: 16,
-    marginTop: 40,
+    marginTop: 12,
     borderRadius: 16,
     shadowColor: "#000",
     shadowOpacity: 0.06,
@@ -410,10 +618,10 @@ const styles = StyleSheet.create({
   inspectorName: { fontSize: 14, fontWeight: "600", color: Colors.text },
   inspectorArea: { fontSize: 12, color: Colors.textSecondary },
   assignBtn: { borderRadius: 10, paddingHorizontal: 16, paddingVertical: 8 },
-  assignBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  assignBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" },
   actionRow: { flexDirection: "row", gap: 12, marginHorizontal: 16, marginTop: 4 },
   actionBtn: { flex: 1, padding: 16, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  actionBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  actionBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
   modalOverlay: { flex: 1, backgroundColor: "#00000060", justifyContent: "flex-end" },
   assignModal: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },

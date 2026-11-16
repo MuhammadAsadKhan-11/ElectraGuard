@@ -1,12 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
+import { AuthScreen, NAVY } from "../../../components/AuthChrome";
 import { sendPasswordResetEmail } from "firebase/auth";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -15,15 +14,11 @@ import {
 import { auth } from "../../../firebaseConfig";
 
 export default function ResetPasswordScreen() {
-  const { email, portal } = useLocalSearchParams<{
+  const { email } = useLocalSearchParams<{
     email: string;
-    portal: string;
   }>();
 
   const [loading, setLoading] = useState(false);
-
-  const isAdmin = portal === "admin";
-  const accent = isAdmin ? "#1A73E8" : "#2EC4B6";
 
   // FIX: Use Firebase's built-in password reset email — no stored passwords needed.
   // This is the correct, secure pattern. Firebase emails a reset link directly to the user.
@@ -74,139 +69,121 @@ export default function ResetPasswordScreen() {
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      keyboardShouldPersistTaps="handled"
-    >
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
-      <Text style={styles.headerTitle}>Reset Password</Text>
-
-      <View style={[styles.iconContainer, { backgroundColor: accent }]}>
-        <Ionicons name="lock-closed-outline" size={32} color="#FFFFFF" />
-      </View>
-
-      <Text style={styles.title}>Reset Your Password</Text>
+    <AuthScreen>
+      <Text style={styles.title}>Set a new password</Text>
       <Text style={styles.subtitle}>
-        We'll send a secure password reset link to:
+        We will email a secure reset link to the address below.
       </Text>
 
-      <View style={[styles.emailBox, { borderColor: accent }]}>
-        <Ionicons name="mail-outline" size={18} color={accent} />
-        <Text style={[styles.emailText, { color: accent }]}>{email}</Text>
+      <View style={styles.emailBox}>
+        <Ionicons name="mail-outline" size={18} color="#111111" />
+        <Text style={styles.emailText}>{email}</Text>
       </View>
 
       <View style={styles.infoBox}>
-        <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+        <Ionicons name="information-circle-outline" size={18} color="#111111" />
         <Text style={styles.infoText}>
-          Firebase will send you a secure link to reset your password. The link
-          expires after a short time for your security.
+          Open the link in the email to choose a new password. The link expires shortly for your security.
         </Text>
       </View>
 
-      <TouchableOpacity
-        style={[styles.confirmButton, { backgroundColor: accent }]}
-        onPress={handleConfirm}
-        disabled={loading}
-      >
+      <TouchableOpacity style={styles.button} onPress={handleConfirm} disabled={loading}>
         {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
+          <ActivityIndicator color="#111111" />
         ) : (
-          <Text style={styles.confirmButtonText}>Send Reset Link</Text>
+          <>
+            <Ionicons name="paper-plane-outline" size={18} color="#111111" />
+            <Text style={styles.buttonText}>Send reset link</Text>
+          </>
         )}
       </TouchableOpacity>
 
       <TouchableOpacity
+        style={styles.backRow}
         onPress={() => router.replace("/src/screens/LoginScreen")}
       >
-        <Text style={[styles.backToLogin, { color: accent }]}>
-          Back to Login
-        </Text>
+        <Ionicons name="arrow-back" size={16} color="#111111" />
+        <Text style={styles.backText}>Back to sign in</Text>
       </TouchableOpacity>
-    </ScrollView>
+    </AuthScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 40,
-    alignItems: "center",
-  },
-  headerTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 16,
-    color: "#1F2933",
-    marginBottom: 32,
-  },
-  iconContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 24,
-  },
   title: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 22,
-    color: "#1F2933",
-    marginBottom: 10,
-    textAlign: "center",
+    fontSize: 24,
+    color: "#111111",
   },
   subtitle: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    color: "#6B7280",
-    textAlign: "center",
+    color: "#8E8E93",
     lineHeight: 20,
-    marginBottom: 16,
-    paddingHorizontal: 8,
+    marginTop: 4,
+    marginBottom: 18,
   },
   emailBox: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    borderWidth: 1.5,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    width: "100%",
-    marginBottom: 24,
-    backgroundColor: "#F9FAFB",
+    gap: 10,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+    paddingHorizontal: 14,
+    minHeight: 52,
+    marginBottom: 14,
   },
-  emailText: { fontFamily: "Inter_600SemiBold", fontSize: 14 },
+  emailText: {
+    flex: 1,
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+    color: NAVY,
+  },
   infoBox: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 8,
+    backgroundColor: "#E8F1FF",
+    borderRadius: 12,
     padding: 12,
     width: "100%",
-    marginBottom: 28,
+    marginBottom: 18,
   },
   infoText: {
+    flex: 1,
     fontFamily: "Inter_400Regular",
     fontSize: 12,
-    color: "#6B7280",
-    flex: 1,
+    color: NAVY,
     lineHeight: 18,
   },
-  confirmButton: {
+  button: {
     width: "100%",
-    borderRadius: 8,
+    backgroundColor: NAVY,
+    borderRadius: 14,
     paddingVertical: 15,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
     marginBottom: 16,
   },
-  confirmButtonText: {
+  buttonText: {
     fontFamily: "Inter_600SemiBold",
-    fontSize: 15,
+    fontSize: 16,
     color: "#FFFFFF",
   },
-  backToLogin: { fontFamily: "Inter_500Medium", fontSize: 14 },
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  backText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+    color: NAVY,
+  },
 });

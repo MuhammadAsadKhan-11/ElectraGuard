@@ -1,5 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+// expo-router 58 bundles its own React Navigation: the hook must come from expo-router
+// (the standalone @react-navigation/native one has no navigator here and crashes the screen).
+import { router, useNavigation } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
   FlatList,
@@ -12,12 +14,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-
-/* ─────────────────────────────────────────────────────────────
-   RENDER BACKEND URL
-───────────────────────────────────────────────────────────── */
-const API_URL = "https://electraguard-backend-1.onrender.com/chat";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { CHAT_ENDPOINT } from "../../../constants/api";
 
 // Render free tier can take 30-60s to wake up, so allow a long timeout
 const REQUEST_TIMEOUT_MS = 90_000;
@@ -50,7 +48,7 @@ const getGeminiResponse = async (
   const slowTimer = setTimeout(() => onSlow?.(), SLOW_NOTICE_MS);
 
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(CHAT_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
@@ -193,6 +191,7 @@ const MessageBubble = ({ item }: { item: Message }) => {
 ───────────────────────────────────────────────────────────── */
 export default function SupportChatScreen() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
 
   const [messages, setMessages] = useState<Message[]>([BOT_GREETING]);
   const [inputText, setInputText] = useState("");
@@ -263,13 +262,13 @@ export default function SupportChatScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0d2137" />
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
 
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => navigation.goBack()}
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : router.navigate("/src/Consumer" as any))}
         >
           <Ionicons name="arrow-back" size={24} color={WHITE} />
         </TouchableOpacity>
@@ -289,7 +288,7 @@ export default function SupportChatScreen() {
       {/* Chat */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <FlatList
           ref={flatListRef}
@@ -303,7 +302,7 @@ export default function SupportChatScreen() {
         />
 
         {/* Input */}
-        <View style={styles.inputBar}>
+        <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <TextInput
             style={styles.input}
             placeholder="Type your message..."
@@ -335,19 +334,18 @@ export default function SupportChatScreen() {
 /* ─────────────────────────────────────────────────────────────
    Styles
 ───────────────────────────────────────────────────────────── */
-const NAVY = "#0d2137";
-const TEAL = "#1a8c7a";
-const USER_BUBBLE = "#1a3a52";
+const BLACK = "#0B3C5D";
+const YELLOW = "#007AFF";
 const WHITE = "#ffffff";
-const LIGHT_BG = "#f0f4f8";
-const BORDER = "#dce3eb";
+const LIGHT_BG = "#F2F2F7";
+const BORDER = "#E5E5EA";
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: NAVY },
+  safe: { flex: 1, backgroundColor: BLACK },
   flex: { flex: 1, backgroundColor: LIGHT_BG },
 
   header: {
-    backgroundColor: NAVY,
+    backgroundColor: BLACK,
     flexDirection: "row",
     alignItems: "center",
     padding: 14,
@@ -364,7 +362,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: TEAL,
+    backgroundColor: YELLOW,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 10,
@@ -394,7 +392,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: TEAL,
+    backgroundColor: YELLOW,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 8,
@@ -416,7 +414,7 @@ const styles = StyleSheet.create({
   },
 
   bubbleUser: {
-    backgroundColor: USER_BUBBLE,
+    backgroundColor: YELLOW,
   },
 
   bubbleText: {
@@ -428,13 +426,13 @@ const styles = StyleSheet.create({
   },
 
   bubbleTextUser: {
-    color: WHITE,
+    color: "#FFFFFF",
   },
 
   sourcesText: {
     marginTop: 8,
     fontSize: 11,
-    color: TEAL,
+    color: "#111111",
     fontWeight: "600",
   },
 
@@ -471,7 +469,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: NAVY,
+    backgroundColor: YELLOW,
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 10,
@@ -482,7 +480,7 @@ const styles = StyleSheet.create({
   },
 
   sendIcon: {
-    color: WHITE,
+    color: "#FFFFFF",
     fontSize: 16,
   },
 });

@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { AuthField, AuthScreen, NAVY } from "../../../components/AuthChrome";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import {
   collection,
@@ -14,22 +15,15 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
-  ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { auth, db } from "../../../firebaseConfig";
+import { requestLoginOtp, signOutEverywhere } from "../../../hooks/authSession";
 
-// ── EmailJS Config ─────────────────────────────────────────────────────────────
-const EMAILJS_SERVICE_ID = process.env.EXPO_PUBLIC_EMAILJS_SERVICE_ID!;
-const EMAILJS_PUBLIC_KEY = process.env.EXPO_PUBLIC_EMAILJS_PUBLIC_KEY!;
-const EMAILJS_PRIVATE_KEY = process.env.EXPO_PUBLIC_EMAILJS_PRIVATE_KEY!;
-const EMAILJS_CONSUMER_TEMPLATE_ID = process.env.EXPO_PUBLIC_EMAILJS_CONSUMER_TEMPLATE_ID!;
+// The verification email (OTP) is sent by the backend; no EmailJS keys in the app.
 
 // ── Field rules ────────────────────────────────────────────────────────────────
 const CONSUMER_ID_MAX = 12; // letters + digits only
@@ -49,27 +43,6 @@ const getPasswordError = (pw: string): string | null => {
   if (!/[^A-Za-z0-9]/.test(pw))
     return "Password must include a special character (e.g. @, #, !).";
   return null;
-};
-
-const generateOTP = (): string =>
-  Math.floor(100000 + Math.random() * 900000).toString();
-
-const sendOTPEmail = async (toEmail: string, otp: string): Promise<void> => {
-  const response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      service_id: EMAILJS_SERVICE_ID,
-      template_id: EMAILJS_CONSUMER_TEMPLATE_ID,
-      user_id: EMAILJS_PUBLIC_KEY,
-      accessToken: EMAILJS_PRIVATE_KEY,
-      template_params: { to_email: toEmail, otp_code: otp },
-    }),
-  });
-  if (!response.ok) {
-    const txt = await response.text();
-    throw new Error(`EmailJS ${response.status}: ${txt}`);
-  }
 };
 
 export default function RegisterScreen() {
@@ -165,11 +138,18 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       // ── Step 1: Duplicate email check ─────────────────────────────────────────
-      const emailSnap = await getDocs(
-        query(collection(db, "consumers"), where("email", "==", form.email)),
-      );
-      if (!emailSnap.empty) {
-        const existingDoc = emailSnap.docs[0].data();
+      // Friendly message only; Firebase Auth rejects duplicate emails anyway, so
+      // a permission error (locked-down rules) just skips this check.
+      let emailSnap: Awaited<ReturnType<typeof getDocs>> | null = null;
+      try {
+        emailSnap = await getDocs(
+          query(collection(db, "consumers"), where("email", "==", form.email)),
+        );
+      } catch {
+        emailSnap = null;
+      }
+      if (emailSnap && !emailSnap.empty) {
+        const existingDoc = emailSnap.docs[0].data() as Record<string, any>;
         const allMatch =
           existingDoc.fullName === form.fullName &&
           existingDoc.consumerId === form.consumerId &&
@@ -202,10 +182,6 @@ export default function RegisterScreen() {
       );
       const user = userCredential.user;
 
-      // ── Step 3: Generate OTP ──────────────────────────────────────────────────
-      const otp = generateOTP();
-      const otpExpiresAt = Date.now() + 10 * 60 * 1000;
-
       // ── Step 4: Save consumer to Firestore ────────────────────────────────────
       // FIX: Never store passwords or base64-encoded passwords in Firestore.
       // Firebase Auth handles password storage securely.
@@ -219,35 +195,32 @@ export default function RegisterScreen() {
         role: "consumer",
         isVerified: false,
         lastVerifiedAt: null,
-        loginOtp: otp,
-        loginOtpExpiresAt: otpExpiresAt,
         createdAt: serverTimestamp(),
       });
 
-      // ── Step 5: Send OTP email ────────────────────────────────────────────────
+      // ── Step 3: Email verification code (backend + EmailJS) ───────────────────
+      let otpInfo;
       try {
-        await sendOTPEmail(form.email, otp);
+        otpInfo = await requestLoginOtp("consumer");
       } catch (emailErr: any) {
-        Alert.alert("Email Error", emailErr.message || "Failed to send OTP.");
+        await signOutEverywhere();
+        Alert.alert(
+          "Account Created",
+          `${emailErr?.message || "We could not send the verification code."} Your account was created; sign in to receive a new code.`,
+          [{ text: "Go to Login", onPress: () => router.replace("/src/screens/LoginScreen") }],
+        );
         setLoading(false);
         return;
       }
 
-      Alert.alert(
-        "OTP Sent",
-        `A 6-digit code has been sent to ${form.email}. Expires in 10 minutes.`,
-        [{ text: "OK" }],
-      );
-
-      // ── Step 6: Navigate to OTP screen ───────────────────────────────────────
+      // ── Step 4: Navigate to OTP screen ───────────────────────────────────────
       router.push({
         pathname: "/src/screens/LoginOTPScreen",
         params: {
-          email: form.email,
-          password: form.password,
-          role: "Consumer",
-          consumerDocId: user.uid,
-          isRegistering: "true",
+          email: otpInfo.maskedEmail || form.email,
+          role: "consumer",
+          expiresIn: String(otpInfo.expiresIn ?? 600),
+          resendIn: String(otpInfo.resendIn ?? 60),
         },
       });
     } catch (error: any) {
@@ -291,53 +264,30 @@ export default function RegisterScreen() {
     }
   };
 
-  const fields = [
-    {
-      key: "fullName",
-      placeholder: "Enter your full name",
-      keyboard: "default",
-    },
-    {
-      key: "consumerId",
-      placeholder: "Consumer ID (letters & digits, max 12)",
-      keyboard: "default",
-    },
-    { key: "cnicNumber", placeholder: "12345-1234567-1", keyboard: "numeric" },
-    {
-      key: "email",
-      placeholder: "Enter your email address",
-      keyboard: "email-address",
-    },
-    {
-      key: "mobileNumber",
-      placeholder: "+92 300 1234567",
-      keyboard: "phone-pad",
-    },
+  const fields: {
+    key: keyof typeof form;
+    placeholder: string;
+    keyboard: "default" | "numeric" | "email-address" | "phone-pad";
+    icon: "person-outline" | "id-card-outline" | "card-outline" | "mail-outline" | "call-outline";
+  }[] = [
+    { key: "fullName", placeholder: "Full name", keyboard: "default", icon: "person-outline" },
+    { key: "consumerId", placeholder: "Consumer ID", keyboard: "default", icon: "id-card-outline" },
+    { key: "cnicNumber", placeholder: "13-digit CNIC", keyboard: "numeric", icon: "card-outline" },
+    { key: "email", placeholder: "Email address", keyboard: "email-address", icon: "mail-outline" },
+    { key: "mobileNumber", placeholder: "Mobile number", keyboard: "phone-pad", icon: "call-outline" },
   ];
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      keyboardShouldPersistTaps="handled"
-    >
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <Image
-        source={require("../../../assets/logo.png")}
-        style={styles.logo}
-        resizeMode="contain"
-      />
-      <Text style={styles.title}>Create Account</Text>
-      <Text style={styles.subtitle}>
-        Join our secure utility analytics platform
-      </Text>
+    <AuthScreen>
+      <Text style={styles.title}>Create account</Text>
+      <Text style={styles.subtitle}>Register as a residential consumer</Text>
 
-      {fields.map(({ key, placeholder, keyboard }) => (
+      {fields.map(({ key, placeholder, keyboard, icon }) => (
         <View key={key} style={{ width: "100%" }}>
-          <TextInput
-            style={styles.input}
+          <AuthField
+            icon={icon}
             placeholder={placeholder}
-            placeholderTextColor="#9CA3AF"
-            value={form[key as keyof typeof form]}
+            value={form[key]}
             onChangeText={(v) =>
               key === "cnicNumber"
                 ? handleCnicChange(v)
@@ -345,179 +295,127 @@ export default function RegisterScreen() {
                   ? handleConsumerIdChange(v)
                   : updateField(key, v)
             }
-            keyboardType={keyboard as any}
-            autoCapitalize="none"
+            keyboardType={keyboard}
+            autoCapitalize={key === "fullName" ? "words" : "none"}
             autoCorrect={false}
-            maxLength={
-              key === "cnicNumber"
-                ? 13
-                : key === "consumerId"
-                  ? CONSUMER_ID_MAX
-                  : undefined
-            }
+            maxLength={key === "cnicNumber" ? 13 : key === "consumerId" ? CONSUMER_ID_MAX : undefined}
           />
           {key === "cnicNumber" && cnicError ? (
-            <Text
-              style={{
-                color: "red",
-                fontSize: 12,
-                marginTop: -8,
-                marginBottom: 8,
-                marginLeft: 4,
-              }}
-            >
-              {cnicError}
-            </Text>
+            <Text style={styles.fieldError}>{cnicError}</Text>
           ) : null}
         </View>
       ))}
 
-      {(
-        [
-          ["password", showPassword, setShowPassword, "Enter your password"],
-          [
-            "confirmPassword",
-            showConfirmPassword,
-            setShowConfirmPassword,
-            "Re-enter your password",
-          ],
-        ] as [
-          string,
-          boolean,
-          React.Dispatch<React.SetStateAction<boolean>>,
-          string,
-        ][]
-      ).map(([field, show, setShow, placeholder]) => (
-        <View key={field} style={styles.passwordContainer}>
-          <TextInput
-            style={styles.passwordInput}
-            placeholder={placeholder}
-            placeholderTextColor="#9CA3AF"
-            value={form[field as keyof typeof form]}
-            onChangeText={(v) => updateField(field, v)}
-            secureTextEntry={!show}
-            maxLength={PASSWORD_MAX}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TouchableOpacity onPress={() => setShow(!show)}>
+      <AuthField
+        icon="lock-closed-outline"
+        placeholder="Password"
+        value={form.password}
+        onChangeText={(v) => updateField("password", v)}
+        secureTextEntry={!showPassword}
+        maxLength={PASSWORD_MAX}
+        autoCapitalize="none"
+        autoCorrect={false}
+        trailing={
+          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
             <Ionicons
-              name={show ? "eye-off-outline" : "eye-outline"}
+              name={showPassword ? "eye-off-outline" : "eye-outline"}
               size={20}
-              color="#6B7280"
+              color="#8E8E93"
             />
           </TouchableOpacity>
-        </View>
-      ))}
+        }
+      />
+      <AuthField
+        icon="lock-closed-outline"
+        placeholder="Confirm password"
+        value={form.confirmPassword}
+        onChangeText={(v) => updateField("confirmPassword", v)}
+        secureTextEntry={!showConfirmPassword}
+        maxLength={PASSWORD_MAX}
+        autoCapitalize="none"
+        autoCorrect={false}
+        trailing={
+          <TouchableOpacity
+            onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+              size={20}
+              color="#8E8E93"
+            />
+          </TouchableOpacity>
+        }
+      />
 
       <Text style={styles.passwordHint}>
-        Password: {PASSWORD_MIN}-{PASSWORD_MAX} characters, with an uppercase
-        letter, a lowercase letter, a number and a special character.
+        8–15 characters with uppercase, lowercase, a number, and a symbol.
       </Text>
 
-      <TouchableOpacity
-        style={styles.checkboxRow}
-        onPress={() => setAgreed(!agreed)}
-      >
+      <TouchableOpacity style={styles.checkboxRow} onPress={() => setAgreed(!agreed)}>
         <View style={[styles.checkbox, agreed && styles.checkboxChecked]}>
-          {agreed && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+          {agreed && <Ionicons name="checkmark" size={14} color="#111111" />}
         </View>
         <Text style={styles.checkboxLabel}>
-          I agree to the <Text style={styles.linkText}>Terms & Conditions</Text>{" "}
-          and <Text style={styles.linkText}>Privacy Policy</Text>
+          I agree to the <Text style={styles.linkText}>Terms & Conditions</Text> and{" "}
+          <Text style={styles.linkText}>Privacy Policy</Text>
         </Text>
       </TouchableOpacity>
 
       <View style={styles.securityNotice}>
-        <Ionicons name="shield-checkmark-outline" size={14} color="#059669" />
-        <Text style={styles.securityText}>
-          Your data is protected with end-to-end encryption
-        </Text>
+        <Ionicons name="shield-checkmark" size={16} color="#111111" />
+        <Text style={styles.securityText}>Your account is protected with email verification.</Text>
       </View>
 
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handleRegister}
-        disabled={loading}
-      >
+      <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
         {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
+          <ActivityIndicator color="#111111" />
         ) : (
-          <Text style={styles.buttonText}>Create Account</Text>
+          <>
+            <Ionicons name="person-add-outline" size={18} color="#111111" />
+            <Text style={styles.buttonText}>Create account</Text>
+          </>
         )}
       </TouchableOpacity>
 
       <Text style={styles.loginText}>
         Already have an account?{" "}
-        <Text
-          style={styles.loginLink}
-          onPress={() => router.push("/src/screens/LoginScreen")}
-        >
-          Login
+        <Text style={styles.loginLink} onPress={() => router.push("/src/screens/LoginScreen")}>
+          Sign in
         </Text>
       </Text>
-    </ScrollView>
+    </AuthScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 28,
-    paddingTop: 50,
-    paddingBottom: 40,
-    alignItems: "center",
-  },
-  logo: { width: 72, height: 72, marginBottom: 14 },
   title: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 22,
-    color: "#1F2933",
-    marginBottom: 6,
+    fontSize: 24,
+    color: "#111111",
   },
   subtitle: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    color: "#6B7280",
-    marginBottom: 24,
-    textAlign: "center",
+    color: "#8E8E93",
+    marginTop: 4,
+    marginBottom: 18,
   },
-  input: {
-    width: "100%",
-    backgroundColor: "rgba(107, 114, 128, 0.1)",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+  fieldError: {
+    color: "#FF3B30",
     fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    color: "#1F2933",
-    marginBottom: 14,
-  },
-  passwordContainer: {
-    width: "100%",
-    backgroundColor: "rgba(107, 114, 128, 0.1)",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 14,
-  },
-  passwordInput: {
-    flex: 1,
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    color: "#1F2933",
+    fontSize: 12,
+    marginTop: -6,
+    marginBottom: 8,
+    marginLeft: 4,
   },
   passwordHint: {
     width: "100%",
     fontFamily: "Inter_400Regular",
     fontSize: 12,
-    color: "#6B7280",
-    marginTop: -6,
+    color: "#8E8E93",
+    marginTop: -2,
     marginBottom: 14,
-    marginLeft: 4,
     lineHeight: 17,
   },
   checkboxRow: {
@@ -528,49 +426,62 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: "#0B3C5D",
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: NAVY,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
+    marginTop: 1,
   },
-  checkboxChecked: { backgroundColor: "#0B3C5D", borderColor: "#0B3C5D" },
+  checkboxChecked: { backgroundColor: NAVY, borderColor: NAVY },
   checkboxLabel: {
     flex: 1,
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    color: "#6B7280",
+    color: "#8E8E93",
     lineHeight: 20,
   },
-  linkText: { color: "#0B3C5D", fontFamily: "Inter_600SemiBold" },
+  linkText: { color: "#111111", fontFamily: "Inter_600SemiBold" },
   securityNotice: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 20,
+    gap: 8,
+    marginBottom: 18,
     width: "100%",
+    backgroundColor: "#E8F1FF",
+    borderRadius: 12,
+    padding: 12,
   },
   securityText: {
+    flex: 1,
     fontFamily: "Inter_400Regular",
     fontSize: 12,
-    color: "#059669",
+    color: "#111111",
+    lineHeight: 17,
   },
   button: {
     width: "100%",
-    backgroundColor: "#0B3C5D",
-    borderRadius: 8,
+    backgroundColor: NAVY,
+    borderRadius: 14,
     paddingVertical: 15,
     alignItems: "center",
-    marginBottom: 20,
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 18,
   },
   buttonText: {
     fontFamily: "Inter_600SemiBold",
-    fontSize: 15,
+    fontSize: 16,
     color: "#FFFFFF",
   },
-  loginText: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#6B7280" },
-  loginLink: { color: "#0B3C5D", fontFamily: "Inter_600SemiBold" },
+  loginText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    color: "#8E8E93",
+    textAlign: "center",
+  },
+  loginLink: { color: "#111111", fontFamily: "Inter_600SemiBold" },
 });

@@ -11,6 +11,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.electraguard.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "ElectraGuard uses your photos when you attach evidence to a theft report or case.",
+        "NSCameraUsageDescription": "ElectraGuard uses the camera when you photograph meter evidence.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
       "runtimeVersion": {
         "policy": "appVersion"
       }
@@ -48,7 +53,13 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "@react-native-firebase/app"
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ElectraGuard uses your photos when you attach evidence to a theft report or case.",
+          "cameraPermission": "ElectraGuard uses the camera when you photograph meter evidence."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

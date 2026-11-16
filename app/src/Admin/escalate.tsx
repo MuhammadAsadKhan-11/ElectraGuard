@@ -6,7 +6,6 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,10 +13,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Colors, getCaseStatusColor, getRiskColor } from "../../../constants/Colors";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { getStrings } from "../../../constants/caseScreensStrings";
-import { escalateCase, useCaseDetail } from "../../../hooks/useCasesApi";
+import { EVIDENCE_PICKER_TYPES, escalateCase, useCaseDetail } from "../../../hooks/useCasesApi";
 
 type EscalationLevel = "Supervisor" | "Department Head" | "Legal / Enforcement";
 const ESCALATION_LEVELS: EscalationLevel[] = ["Supervisor", "Department Head", "Legal / Enforcement"];
@@ -154,7 +154,7 @@ export default function EscalateCaseScreen() {
   };
 
   const pickDocument = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true, multiple: true });
+    const result = await DocumentPicker.getDocumentAsync({ type: EVIDENCE_PICKER_TYPES, copyToCacheDirectory: true, multiple: true });
     if (!result.canceled) {
       setFiles((prev) => [
         ...prev,
@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     padding: 16,
     margin: 16,
-    marginTop: 40,
+    marginTop: 12,
     borderRadius: 16,
     shadowColor: "#000",
     shadowOpacity: 0.06,
@@ -430,7 +430,7 @@ const styles = StyleSheet.create({
   },
   uploadBtnDoc: { backgroundColor: Colors.primary + "15", borderWidth: 1, borderColor: Colors.primary },
   uploadBtnIcon: { fontSize: 16 },
-  uploadBtnText: { fontSize: 13, fontWeight: "600", color: "#fff" },
+  uploadBtnText: { fontSize: 13, fontWeight: "600", color: "#111111" },
   fileList: { marginTop: 12, gap: 8 },
   fileItem: {
     flexDirection: "row",
@@ -473,7 +473,7 @@ const styles = StyleSheet.create({
   },
   submitBtnDisabled: { opacity: 0.7 },
   submitLoading: { flexDirection: "row", alignItems: "center", gap: 10 },
-  confirmBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  confirmBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
   cancelBtn: {
     borderRadius: 14,
     paddingVertical: 14,

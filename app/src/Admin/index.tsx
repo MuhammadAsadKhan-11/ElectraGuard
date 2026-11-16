@@ -1,4 +1,5 @@
 // app/src/Admin/DashboardScreen.tsx
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, getDocs, query, where } from "firebase/firestore";
@@ -8,7 +9,6 @@ import {
   Dimensions,
   Image,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 import NotificationBell from "../../../components/NotificationBell";
+import { TabHero } from "../../../components/AppChrome";
 import { formatNumber, niceCeil, palette } from "../../../constants/adminUi";
 import { auth, db } from "../../../firebaseConfig";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
@@ -182,7 +183,7 @@ const MiniChart = ({
             return (
               <React.Fragment key={`seg-${p.date}`}>
                 {segment(getX(i - 1), getY(prev.normal), getX(i), getY(p.normal), palette.accent, `n-${i}`)}
-                {segment(getX(i - 1), getY(prev.theft), getX(i), getY(p.theft), palette.danger, `t-${i}`)}
+                {segment(getX(i - 1), getY(prev.theft), getX(i), getY(p.theft), palette.secondary, `t-${i}`)}
               </React.Fragment>
             );
           })}
@@ -197,7 +198,7 @@ const MiniChart = ({
               <View
                 style={[
                   styles.chartDot,
-                  { left: getX(i) - 4, top: getY(p.theft) - 4, backgroundColor: palette.danger },
+                  { left: getX(i) - 4, top: getY(p.theft) - 4, backgroundColor: palette.secondary },
                 ]}
               />
             </React.Fragment>
@@ -219,7 +220,7 @@ const MiniChart = ({
 
       <View style={styles.legendRow}>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: palette.danger }]} />
+          <View style={[styles.legendDot, { backgroundColor: palette.secondary }]} />
           <Text style={[styles.legendText, { color: colors.subText }]}>Theft</Text>
         </View>
         <View style={styles.legendItem}>
@@ -268,28 +269,22 @@ export default function DashboardScreen() {
   const k = data?.kpis;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+    <View style={[styles.safe, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor={palette.ink} />
+      <TabHero
+        title="Dashboard"
+        subtitle={adminName}
+        right={<NotificationBell tintColor="#0B3C5D" style={styles.heroBell} />}
+      >
+        <Text style={styles.adminRole}>System administrator</Text>
+      </TabHero>
       <ScrollView
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={pullRefresh} />
         }
       >
-        {/* ── Header ── */}
-        <View style={[styles.header, { backgroundColor: colors.card }]}>
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>
-              Admin Dashboard
-            </Text>
-            <Text style={styles.adminName}>{adminName}</Text>
-            <Text style={[styles.adminRole, { color: colors.subText }]}>
-              System Administrator
-            </Text>
-          </View>
-
-          <NotificationBell />
-        </View>
 
         {loading && !data && (
           <View style={styles.centerBox}>
@@ -322,10 +317,10 @@ export default function DashboardScreen() {
             <View style={styles.kpiGrid}>
               <KPICard
                 imageIndex={0}
-                title="Total Consumers"
+                title="Total Consumption"
                 value={formatNumber(k.totalConsumptionKwh)}
                 subtitle={`${k.consumptionScopeLabel} • ${formatNumber(k.totalConsumers)} consumers`}
-                color={colors.text}
+                color={palette.primary}
                 badge={changeBadge(k.consumptionChangePct)}
               />
               <KPICard
@@ -333,7 +328,7 @@ export default function DashboardScreen() {
                 title="Active Members"
                 value={formatNumber(k.activeMembers)}
                 subtitle={`${k.activePct}% active • ${formatNumber(k.registeredCount)} registered`}
-                color={colors.text}
+                color={palette.primary}
               />
               <KPICard
                 imageIndex={2}
@@ -354,7 +349,7 @@ export default function DashboardScreen() {
                 title="Revenue Loss"
                 value={k.revenueLossFormatted}
                 subtitle="Estimated monthly"
-                color={colors.text}
+                color={palette.primary}
               />
               <KPICard
                 imageIndex={5}
@@ -388,60 +383,60 @@ export default function DashboardScreen() {
             style={[styles.quickBtn, { backgroundColor: colors.card }]}
             onPress={() => router.push("/src/Admin/RisksScreen" as any)}
           >
-            <Text style={[styles.quickBtnText, { color: colors.text }]}>
-              View Risk List
-            </Text>
-            <Text style={styles.quickArrow}>›</Text>
+            <View style={styles.quickLeft}>
+              <View style={styles.quickIcon}>
+                <Ionicons name="warning-outline" size={18} color={palette.primary} />
+              </View>
+              <Text style={[styles.quickBtnText, { color: colors.text }]}>View risk list</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={palette.primary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.quickBtn, { backgroundColor: colors.card }]}
             onPress={() => router.push("/src/Admin/CasesScreen" as any)}
           >
-            <Text style={[styles.quickBtnText, { color: colors.text }]}>
-              Open Cases
-            </Text>
-            <Text style={styles.quickArrow}>›</Text>
+            <View style={styles.quickLeft}>
+              <View style={styles.quickIcon}>
+                <Ionicons name="folder-outline" size={18} color={palette.primary} />
+              </View>
+              <Text style={[styles.quickBtnText, { color: colors.text }]}>Open cases</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={palette.primary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.quickBtn, { backgroundColor: colors.card }]}
             onPress={() => router.push("/src/Admin/ReportsScreen" as any)}
           >
-            <Text style={[styles.quickBtnText, { color: colors.text }]}>
-              Reports
-            </Text>
-            <Text style={styles.quickArrow}>›</Text>
+            <View style={styles.quickLeft}>
+              <View style={styles.quickIcon}>
+                <Ionicons name="bar-chart-outline" size={18} color={palette.primary} />
+              </View>
+              <Text style={[styles.quickBtnText, { color: colors.text }]}>Reports</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={palette.primary} />
           </TouchableOpacity>
         </View>
 
         <View style={{ height: 24 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    padding: 20,
-    margin: 16,
-    borderRadius: 16,
-    marginTop: 40,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+  scroll: { paddingTop: 18 },
+  heroBell: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 6,
   },
-  headerTitle: { fontSize: 22, fontWeight: "700" },
-  adminName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: palette.accent,
-    marginTop: 4,
+  adminRole: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    color: "#E5E5EA",
+    marginTop: 8,
   },
-  adminRole: { fontSize: 12 },
   bellBtn: { position: "relative", padding: 4 },
   bellImage: { width: 28, height: 28 },
   bellBadge: {
@@ -466,7 +461,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 10,
   },
-  retryText: { color: "#fff", fontWeight: "700" },
+  retryText: { color: "#FFFFFF", fontWeight: "700" },
 
   sectionTitle: {
     fontSize: 16,
@@ -563,15 +558,21 @@ const styles = StyleSheet.create({
   quickGrid: { paddingHorizontal: 16, gap: 10 },
   quickBtn: {
     borderRadius: 14,
-    padding: 16,
+    padding: 14,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+  },
+  quickLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
+  quickIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#E8F1FF",
+    alignItems: "center",
+    justifyContent: "center",
   },
   quickBtnText: { fontSize: 14, fontWeight: "600" },
-  quickArrow: { fontSize: 20, color: palette.primary },
 });

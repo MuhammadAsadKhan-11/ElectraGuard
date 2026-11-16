@@ -1,29 +1,58 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Ionicons } from "@expo/vector-icons";
+import { Tabs } from "expo-router";
+import React from "react";
+import { StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { useMyNotifications } from "../../../hooks/useMyNotifications";
+
+// Screens opened from inside a tab (results, chat, notifications, case details…).
+// expo-router 58 treats `href: null` as an unreachable route and immediately
+// redirects to the first tab, so these screens could never stay open. Keep them
+// as normal routes and just render no tab-bar button for them.
+const HIDDEN_TAB = {
+  tabBarButton: () => null,
+  tabBarItemStyle: { display: "none" as const },
+};
+
+const Colors = {
+  primary: "#0B3C5D",
+  inactive: "#8E8E93",
+  white: "#FFFFFF",
+  border: "#E5E5EA",
+  bar: "#FFFFFF",
+  pill: "#E8F1FF",
+};
 
 export default function ConsumerLayout() {
+  useMyNotifications();
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: '#0B3C5D',
-        tabBarInactiveTintColor: '#9CA3AF',
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.inactive,
+        tabBarStyle: {
+          backgroundColor: Colors.bar,
+          borderTopWidth: 1,
+          borderTopColor: Colors.border,
+          height: 64 + insets.bottom,
+          paddingTop: 6,
+          paddingBottom: Math.max(insets.bottom, 8),
+        },
         tabBarLabelStyle: styles.tabLabel,
-        tabBarShowLabel: true,
-        tabBarIconStyle: styles.tabIcon,
+        tabBarHideOnKeyboard: true,
       }}
     >
-      {/* ── Visible Tabs ── */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: "Home",
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
-              <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
+            <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+              <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
             </View>
           ),
         }}
@@ -31,10 +60,14 @@ export default function ConsumerLayout() {
       <Tabs.Screen
         name="ReportScreen"
         options={{
-          title: 'Report',
+          title: "Report",
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
-              <Ionicons name={focused ? 'document-text' : 'document-text-outline'} size={22} color={color} />
+            <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+              <Ionicons
+                name={focused ? "document-text" : "document-text-outline"}
+                size={22}
+                color={color}
+              />
             </View>
           ),
         }}
@@ -42,10 +75,10 @@ export default function ConsumerLayout() {
       <Tabs.Screen
         name="LearnScreen"
         options={{
-          title: 'Learn',
+          title: "Learn",
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
-              <Ionicons name={focused ? 'bulb' : 'bulb-outline'} size={22} color={color} />
+            <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+              <Ionicons name={focused ? "bulb" : "bulb-outline"} size={22} color={color} />
             </View>
           ),
         }}
@@ -53,55 +86,38 @@ export default function ConsumerLayout() {
       <Tabs.Screen
         name="ProfileScreen"
         options={{
-          title: 'Profile',
+          title: "Profile",
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
-              <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
+            <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+              <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />
             </View>
           ),
         }}
       />
 
-      {/* ── Hidden Screens — exact filenames from your Consumer folder ── */}
-      <Tabs.Screen name="DetectionResultScreen" options={{ href: null }} />
-      <Tabs.Screen name="ChatbotScreen"         options={{ href: null }} />
-      <Tabs.Screen name="supportscreen"         options={{ href: null }} />
-      <Tabs.Screen name="ReportDetailScreen"      options={{ href: null }} />
-      <Tabs.Screen name="NotificationsScreen"        options={{ href: null }} />  
+      <Tabs.Screen name="DetectionResultScreen" options={HIDDEN_TAB} />
+      <Tabs.Screen name="ChatbotScreen" options={HIDDEN_TAB} />
+      <Tabs.Screen name="supportscreen" options={HIDDEN_TAB} />
+      <Tabs.Screen name="NotificationsScreen" options={HIDDEN_TAB} />
+      <Tabs.Screen name="NotificationDetailScreen" options={HIDDEN_TAB} />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    height: 64,
-    paddingBottom: 6,
-    paddingTop: 6,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-  },
   tabLabel: {
-    fontFamily: 'Inter_500Medium',
     fontSize: 11,
-    marginTop: -2,
+    fontWeight: "600",
+    marginTop: 2,
   },
-  tabIcon: {
-    marginBottom: -2,
-  },
-  iconWrapper: {
-    width: 40,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+  iconWrap: {
+    width: 44,
+    height: 28,
     borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  iconWrapperActive: {
-    backgroundColor: '#EFF6FF',
+  iconWrapActive: {
+    backgroundColor: Colors.pill,
   },
 });

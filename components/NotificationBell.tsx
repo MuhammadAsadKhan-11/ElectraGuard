@@ -1,5 +1,4 @@
-// components/NotificationBell.tsx
-// Bell icon + live unread badge. Kisi bhi admin screen ke header mai bas <NotificationBell /> laga do.
+
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef } from "react";
 import {
@@ -12,16 +11,20 @@ import {
   ViewStyle,
 } from "react-native";
 import { palette } from "../constants/adminUi";
+import { useAdminOverlay } from "./AdminOverlay";
 import { useNotifications } from "../hooks/useAdminApi";
 
 export default function NotificationBell({
   size = 28,
   style,
+  tintColor,
 }: {
   size?: number;
   style?: StyleProp<ViewStyle>;
+  tintColor?: string;
 }) {
   const router = useRouter();
+  const overlay = useAdminOverlay();
   const { unread, loaded } = useNotifications();
 
   const shake = useRef(new Animated.Value(0)).current;
@@ -49,13 +52,15 @@ export default function NotificationBell({
   return (
     <TouchableOpacity
       style={[styles.btn, style]}
-      onPress={() => router.push("/src/Admin/notifications" as any)}
+      onPress={() =>
+        overlay ? overlay.openNotifications() : router.push("/src/Admin/notifications" as any)
+      }
       activeOpacity={0.7}
       accessibilityLabel="Notifications"
     >
       <Animated.Image
         source={require("../assets/Bell.png")}
-        style={{ width: size, height: size, transform: [{ rotate }] }}
+        style={{ width: size, height: size, transform: [{ rotate }], tintColor }}
         resizeMode="contain"
       />
       {unread > 0 && (

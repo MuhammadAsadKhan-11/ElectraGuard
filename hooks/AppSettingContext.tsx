@@ -7,48 +7,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import {
-  Language,
-  Theme,
-  Translations,
-  isRTL,
-  translationsMap,
+    Language,
+    Theme,
+    Translations,
+    isRTL,
+    translationsMap,
 } from '../constants/translations';
+import { darkTheme, lightTheme, AppTheme } from '../theme';
 
-// ─────────────────────────────────────────────────────────────
-// THEME COLORS
-// ─────────────────────────────────────────────────────────────
-export interface ThemeColors {
-  background:   string;
-  card:         string;
-  text:         string;
-  subText:      string;
-  border:       string;
-  primary:      string;
-  inputBg:      string;
-  statusBar:    'light-content' | 'dark-content';
-}
+export type ThemeColors = AppTheme;
 
-export const lightColors: ThemeColors = {
-  background: '#F7F8FC',
-  card:       '#FFFFFF',
-  text:       '#1A202C',
-  subText:    '#718096',
-  border:     '#F1F5F9',
-  primary:    '#0B3C5D',
-  inputBg:    '#F9FAFB',
-  statusBar:  'dark-content',
-};
+export const lightColors: ThemeColors = lightTheme;
 
-export const darkColors: ThemeColors = {
-  background: '#0F1923',
-  card:       '#1A2535',
-  text:       '#F0F4F8',
-  subText:    '#A0AEC0',
-  border:     '#2D3748',
-  primary:    '#2EC4B6',
-  inputBg:    '#1E2D3D',
-  statusBar:  'light-content',
-};
+export const darkColors: ThemeColors = darkTheme;
 
 // ─────────────────────────────────────────────────────────────
 // CONTEXT TYPE

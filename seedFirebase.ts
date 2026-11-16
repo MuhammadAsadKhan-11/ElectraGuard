@@ -27,7 +27,7 @@ export async function seedAllData(forceUpdate = false): Promise<boolean> {
       subtitle:
         "Understanding electricity theft and its impact on our community",
       icon: "shield",
-      color: "#E53E3E",
+      color: "#FF3B30",
       order: 1,
       learnMoreLabel: "Learn More",
       learnMoreUrl: "https://nepra.org.pk/",
@@ -36,7 +36,7 @@ export async function seedAllData(forceUpdate = false): Promise<boolean> {
           heading: "What is Electricity Theft?",
           body: "Electricity theft is the unauthorized use of electrical power through meter tampering, illegal connections, or bypassing the billing system.",
           icon: "information-circle",
-          iconColor: "#E53E3E",
+          iconColor: "#FF3B30",
           bulletPoints: [],
         },
         {
@@ -137,7 +137,7 @@ export async function seedAllData(forceUpdate = false): Promise<boolean> {
       suspiciousActivitySteps: [
         {
           icon: "flag",
-          iconColor: "#E53E3E",
+          iconColor: "#FF3B30",
           text: "Report immediately: Use the 'Report Issue' feature in the app to notify authorities.",
         },
         {

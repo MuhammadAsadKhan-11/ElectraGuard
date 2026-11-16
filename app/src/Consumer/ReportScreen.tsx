@@ -1,16 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { onAuthStateChanged } from "firebase/auth";
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  orderBy,
-  query,
-  where,
-} from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, getDocs, orderBy, query, where } from "firebase/firestore";
+import { getDownloadURL, ref, uploadString } from "firebase/storage";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -26,7 +18,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { auth, db } from "../../../firebaseConfig";
+import { TabHero } from "../../../components/AppChrome";
+import ConsumerBell from "../../../components/ConsumerBell";
+import { auth, db, storage } from "../../../firebaseConfig";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { IssueType, ReportDisplayItem } from "../../../types/report.types"; // ← imported
 
@@ -142,7 +136,7 @@ export default function ReportScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: true,
       quality: 0.5,
       base64: true,
@@ -180,29 +174,71 @@ export default function ReportScreen() {
     setSubmitting(true);
     try {
       const referenceId = generateRefId();
+      const uid = consumer.uid || auth.currentUser?.uid || "consumer";
+      const now = new Date();
+      let imageUrl = "";
+      if (selectedImage) {
+        try {
+          const imageRef = ref(
+            storage,
+            `case_evidence/reports/${uid}_${now.getTime()}.jpg`,
+          );
+          await uploadString(imageRef, selectedImage, "data_url");
+          imageUrl = await getDownloadURL(imageRef);
+        } catch {
+          imageUrl = "";
+        }
+      }
 
       await addDoc(collection(db, "cases"), {
         caseId: referenceId,
-        // ✅ Uses the name the consumer entered at registration
         consumerId: consumer.consumerId,
+        consumerDocId: uid,
+        uid,
         consumerName: consumer.fullName,
         consumerEmail: consumer.email,
         issueType: selectedIssue.label,
         issueValue: selectedIssue.value,
+        category: selectedIssue.label,
         description: description.trim(),
         location: meterLocation.trim(),
+        area: meterLocation.trim(),
         riskLevel: urgency,
+        priority: urgency === "High" ? "High" : "Normal",
         currentStatus: "Under Investigation",
+        status: "In Progress",
         assignedInspector: "",
         escalated: false,
-        imageUrl: selectedImage ?? "",
+        hasImage: Boolean(imageUrl),
+        evidence: imageUrl
+          ? [
+              {
+                name: "report.jpg",
+                type: "image",
+                url: imageUrl,
+                uploadedBy: consumer.fullName,
+                date: now.toISOString().slice(0, 10),
+              },
+            ]
+          : [],
         resolution: "",
-        createdAt: new Date(),
+        timeline: [
+          {
+            action: "Report submitted by consumer",
+            date: now.toISOString().slice(0, 10),
+            time: now.toTimeString().slice(0, 5),
+          },
+        ],
+        createdAt: now,
+        updatedAt: now,
+        createdBy: uid,
       });
 
       Alert.alert(
-        "Report Submitted ✅",
-        `Your reference ID is: ${referenceId}\nWe will contact you within 24–48 hours.`,
+        "Report Submitted",
+        selectedImage && !imageUrl
+          ? `Your reference ID is ${referenceId}. The report was saved, but the photo could not be uploaded.`
+          : `Your reference ID is ${referenceId}. We will contact you within 24–48 hours.`,
       );
 
       // Reset form
@@ -223,50 +259,38 @@ export default function ReportScreen() {
 
   // ── Status color helper ────────────────────────────────────────
   const statusColor = (status: string) => {
-    if (status === "Resolved") return { bg: "#DCFCE7", text: "#16A34A" };
+    if (status === "Resolved") return { bg: "#DCFCE7", text: "#34C759" };
     if (status === "In Progress") return { bg: "#FEF9C3", text: "#CA8A04" };
-    if (status === "Escalated") return { bg: "#FEE2E2", text: "#DC2626" };
+    if (status === "Escalated") return { bg: "#FEE2E2", text: "#FF3B30" };
     if (status === "Under Investigation")
       return { bg: "#DBEAFE", text: "#2563EB" };
-    return { bg: "#F3F4F6", text: "#6B7280" };
+    return { bg: "#F3F4F6", text: "#8E8E93" };
   };
 
   const urgencyColors = {
-    Low: "#2EC4B6",
-    Medium: "#F59E0B",
-    High: "#EF4444",
+    Low: "#34C759",
+    Medium: "#FF9500",
+    High: "#FF3B30",
   };
 
   // ─── Render ───────────────────────────────────────────────────
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <TabHero
+        title="Report theft"
+        subtitle={
+          consumer
+            ? `Reporting as ${consumer.fullName}`
+            : "Submit meter issues, billing concerns, or unusual activity"
+        }
+        right={<ConsumerBell />}
+      />
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ── Hero Card ── */}
-        <View style={styles.heroCard}>
-          <Text style={styles.heroTitle}>Report Theft</Text>
-          <Text style={styles.heroSub}>
-            Submit meter issues, billing concerns, or unusual activity
-          </Text>
-          {/* ✅ Show the logged-in consumer's name */}
-          {consumer && (
-            <View style={styles.consumerBadge}>
-              <Ionicons
-                name="person-circle-outline"
-                size={16}
-                color="#93C5FD"
-              />
-              <Text style={styles.consumerBadgeText}>
-                Reporting as: {consumer.fullName}
-              </Text>
-            </View>
-          )}
-        </View>
-
         {/* ══════════════ SUBMIT FORM ══════════════ */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Submit New Report</Text>
@@ -289,7 +313,7 @@ export default function ReportScreen() {
             >
               {selectedIssue ? selectedIssue.label : "Select issue type"}
             </Text>
-            <Ionicons name="chevron-down" size={18} color="#6B7280" />
+            <Ionicons name="chevron-down" size={18} color="#8E8E93" />
           </TouchableOpacity>
 
           {/* Description */}
@@ -299,7 +323,7 @@ export default function ReportScreen() {
           <TextInput
             style={styles.textArea}
             placeholder="Please describe the issue in detail..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor="#8E8E93"
             value={description}
             onChangeText={setDescription}
             multiline
@@ -314,7 +338,7 @@ export default function ReportScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. Outside main gate, Blue Area..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor="#8E8E93"
             value={meterLocation}
             onChangeText={setMeterLocation}
           />
@@ -366,7 +390,7 @@ export default function ReportScreen() {
               </View>
             ) : (
               <>
-                <Ionicons name="camera-outline" size={32} color="#9CA3AF" />
+                <Ionicons name="camera-outline" size={32} color="#8E8E93" />
                 <Text style={styles.imageUploadTitle}>
                   Take or upload photo of the issue
                 </Text>
@@ -422,7 +446,7 @@ export default function ReportScreen() {
           <Text style={styles.cardTitle}>My Submitted Cases</Text>
 
           {loadingReports ? (
-            <ActivityIndicator color="#0B3C5D" style={{ marginVertical: 20 }} />
+            <ActivityIndicator color="#111111" style={{ marginVertical: 20 }} />
           ) : previousReports.length === 0 ? (
             <View style={styles.emptyBox}>
               <Ionicons name="document-outline" size={28} color="#D1D5DB" />
@@ -453,7 +477,7 @@ export default function ReportScreen() {
                       <Ionicons
                         name="location-outline"
                         size={12}
-                        color="#9CA3AF"
+                        color="#8E8E93"
                       />
                       <Text style={styles.reportLocation}>
                         {report.meterLocation}
@@ -463,7 +487,7 @@ export default function ReportScreen() {
 
                   <View style={styles.reportBottomRow}>
                     <View style={styles.reportDateRow}>
-                      <Ionicons name="time-outline" size={12} color="#9CA3AF" />
+                      <Ionicons name="time-outline" size={12} color="#8E8E93" />
                       <Text style={styles.reportDate}>
                         {report.createdAt instanceof Date
                           ? report.createdAt.toLocaleDateString("en-GB", {
@@ -493,10 +517,10 @@ export default function ReportScreen() {
                           {
                             color:
                               report.urgencyLevel === "High"
-                                ? "#DC2626"
+                                ? "#FF3B30"
                                 : report.urgencyLevel === "Medium"
                                   ? "#CA8A04"
-                                  : "#16A34A",
+                                  : "#34C759",
                           },
                         ]}
                       >
@@ -540,13 +564,13 @@ export default function ReportScreen() {
               activeOpacity={0.7}
             >
               <View style={styles.contactIconBox}>
-                <Ionicons name={icon as any} size={20} color="#0B3C5D" />
+                <Ionicons name={icon as any} size={20} color="#111111" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.contactLabel}>{label}</Text>
                 <Text style={styles.contactValue}>{value}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+              <Ionicons name="chevron-forward" size={16} color="#8E8E93" />
             </TouchableOpacity>
           ))}
         </View>
@@ -568,7 +592,7 @@ export default function ReportScreen() {
             <Text style={styles.modalTitle}>Select Issue Type</Text>
             {loadingTypes ? (
               <ActivityIndicator
-                color="#0B3C5D"
+                color="#111111"
                 style={{ marginVertical: 20 }}
               />
             ) : issueTypes.length === 0 ? (
@@ -596,7 +620,7 @@ export default function ReportScreen() {
                     {type.label}
                   </Text>
                   {selectedIssue?.id === type.id && (
-                    <Ionicons name="checkmark" size={18} color="#0B3C5D" />
+                    <Ionicons name="checkmark" size={18} color="#111111" />
                   )}
                 </TouchableOpacity>
               ))
@@ -610,12 +634,12 @@ export default function ReportScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F8FAFC" },
-  container: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 100 },
-  required: { color: "#DC2626" },
+  screen: { flex: 1, backgroundColor: "#F2F2F7" },
+  container: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 110 },
+  required: { color: "#FF3B30" },
 
   heroCard: {
-    backgroundColor: "#0B3C5D",
+    backgroundColor: "#007AFF",
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
@@ -654,7 +678,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#1F2933",
+    color: "#111111",
     marginBottom: 16,
   },
   fieldLabel: {
@@ -670,33 +694,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#E5E5EA",
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 13,
     backgroundColor: "#F9FAFB",
   },
-  dropdownPlaceholder: { fontSize: 14, color: "#9CA3AF" },
-  dropdownSelected: { fontSize: 14, color: "#1F2933", fontWeight: "500" },
+  dropdownPlaceholder: { fontSize: 14, color: "#8E8E93" },
+  dropdownSelected: { fontSize: 14, color: "#111111", fontWeight: "500" },
 
   textArea: {
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#E5E5EA",
     borderRadius: 10,
     padding: 14,
     fontSize: 14,
-    color: "#1F2933",
+    color: "#111111",
     backgroundColor: "#F9FAFB",
     minHeight: 110,
   },
   input: {
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#E5E5EA",
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 13,
     fontSize: 14,
-    color: "#1F2933",
+    color: "#111111",
     backgroundColor: "#F9FAFB",
   },
 
@@ -706,14 +730,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1.5,
-    borderColor: "#E5E7EB",
+    borderColor: "#E5E5EA",
     alignItems: "center",
   },
-  urgencyBtnText: { fontSize: 13, fontWeight: "600", color: "#6B7280" },
+  urgencyBtnText: { fontSize: 13, fontWeight: "600", color: "#8E8E93" },
 
   imageUploadBox: {
     borderWidth: 1.5,
-    borderColor: "#E5E7EB",
+    borderColor: "#E5E5EA",
     borderStyle: "dashed",
     borderRadius: 12,
     padding: 20,
@@ -724,12 +748,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   imageUploadTitle: { fontSize: 13, fontWeight: "500", color: "#374151" },
-  imageUploadSub: { fontSize: 11, color: "#9CA3AF" },
+  imageUploadSub: { fontSize: 11, color: "#8E8E93" },
   selectImgBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#0B3C5D",
+    backgroundColor: "#007AFF",
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -738,14 +762,14 @@ const styles = StyleSheet.create({
   selectImgBtnText: { fontSize: 13, fontWeight: "600", color: "#FFFFFF" },
   imagePreviewWrapper: { alignItems: "center", gap: 8 },
   imagePreview: { width: 200, height: 140, borderRadius: 10 },
-  imageChangeTxt: { fontSize: 12, color: "#9CA3AF" },
+  imageChangeTxt: { fontSize: 12, color: "#8E8E93" },
 
   submitBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: "#0B3C5D",
+    backgroundColor: "#007AFF",
     borderRadius: 12,
     paddingVertical: 16,
     marginTop: 20,
@@ -762,7 +786,7 @@ const styles = StyleSheet.create({
   infoTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#0B3C5D",
+    color: "#111111",
     marginBottom: 10,
   },
   infoRow: {
@@ -775,7 +799,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#2EC4B6",
+    backgroundColor: "#007AFF",
     marginTop: 6,
   },
   infoText: { fontSize: 12, color: "#374151", flex: 1 },
@@ -793,13 +817,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 6,
   },
-  reportRefId: { fontSize: 13, fontWeight: "700", color: "#0B3C5D" },
+  reportRefId: { fontSize: 13, fontWeight: "700", color: "#111111" },
   statusBadge: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
   statusBadgeText: { fontSize: 11, fontWeight: "600" },
   reportIssueType: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#1F2933",
+    color: "#111111",
     marginBottom: 6,
   },
   reportLocationRow: {
@@ -808,19 +832,19 @@ const styles = StyleSheet.create({
     gap: 4,
     marginBottom: 6,
   },
-  reportLocation: { fontSize: 11, color: "#9CA3AF" },
+  reportLocation: { fontSize: 11, color: "#8E8E93" },
   reportBottomRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   reportDateRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  reportDate: { fontSize: 11, color: "#9CA3AF" },
+  reportDate: { fontSize: 11, color: "#8E8E93" },
   riskPill: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
   riskPillText: { fontSize: 10, fontWeight: "600" },
   reportResolution: {
     fontSize: 12,
-    color: "#6B7280",
+    color: "#8E8E93",
     marginTop: 6,
     fontStyle: "italic",
   },
@@ -837,15 +861,15 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#E8F1FF",
     justifyContent: "center",
     alignItems: "center",
   },
-  contactLabel: { fontSize: 11, color: "#9CA3AF" },
-  contactValue: { fontSize: 14, fontWeight: "500", color: "#1F2933" },
+  contactLabel: { fontSize: 11, color: "#8E8E93" },
+  contactValue: { fontSize: 14, fontWeight: "500", color: "#111111" },
 
   emptyBox: { alignItems: "center", paddingVertical: 20, gap: 8 },
-  emptyText: { fontSize: 13, color: "#9CA3AF" },
+  emptyText: { fontSize: 13, color: "#8E8E93" },
 
   modalOverlay: {
     flex: 1,
@@ -862,7 +886,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#1F2933",
+    color: "#111111",
     marginBottom: 16,
   },
   modalOption: {
@@ -874,7 +898,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 4,
   },
-  modalOptionActive: { backgroundColor: "#EFF6FF" },
+  modalOptionActive: { backgroundColor: "#E8F1FF" },
   modalOptionText: { fontSize: 14, color: "#374151" },
-  modalOptionTextActive: { fontSize: 14, fontWeight: "600", color: "#0B3C5D" },
+  modalOptionTextActive: { fontSize: 14, fontWeight: "600", color: "#111111" },
 });

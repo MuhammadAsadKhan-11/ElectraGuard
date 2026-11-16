@@ -3,11 +3,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import {
   EmailAuthProvider,
+  deleteUser,
   reauthenticateWithCredential,
-  signOut,
   updatePassword,
 } from "firebase/auth";
-import { deleteField, doc, getDoc, updateDoc } from "firebase/firestore";
+import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, updateDoc, where } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,7 +15,6 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -25,14 +24,16 @@ import {
   View,
 } from "react-native";
 import { Language, Theme } from "../../../constants/translations";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../../../firebaseConfig";
+import { resetSessionStores, signOutEverywhere } from "../../../hooks/authSession";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { useCasesList } from "../../../hooks/useCasesApi";
 
 // Firestore collection where admin profiles live. Change if yours is different.
 const ADMIN_COLLECTION = "admins";
-const TEAL = "#1FA39A";
-const NAVY = "#0B3C5D";
+const TEAL = "#007AFF";
+const NAVY = "#007AFF";
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
@@ -893,6 +894,7 @@ const PrivacyPolicyModal: React.FC<{
 // ─────────────────────────────────────────────────────────────
 export default function ProfileScreen(): React.ReactElement {
   const { t, colors, language } = useAppSettings();
+  const insets = useSafeAreaInsets();
   const extra = EXTRA[language] ?? EXTRA.en;
 
   const [profile, setProfile] = useState<AdminProfile | null>(null);
@@ -955,7 +957,7 @@ export default function ProfileScreen(): React.ReactElement {
     setShowLogoutModal(false);
     setLoggingOut(true);
     try {
-      await signOut(auth);
+      await signOutEverywhere();
       router.replace("/src/screens/LoginScreen" as any);
     } catch (err) {
       console.error("Logout error:", err);
@@ -963,6 +965,44 @@ export default function ProfileScreen(): React.ReactElement {
     } finally {
       setLoggingOut(false);
     }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete account",
+      "This permanently deletes your admin login. Case records already stored stay in ElectraGuard.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            const user = auth.currentUser;
+            if (!user) return;
+            setLoggingOut(true);
+            try {
+              const snaps = await getDocs(
+                query(collection(db, "admins"), where("uid", "==", user.uid)),
+              );
+              await Promise.all(snaps.docs.map((item) => deleteDoc(item.ref)));
+              await deleteUser(user);
+              resetSessionStores();
+              router.replace("/src/screens/LoginScreen" as any);
+            } catch (err: any) {
+              const recent = err?.code === "auth/requires-recent-login";
+              Alert.alert(
+                "Could not delete account",
+                recent
+                  ? "Log out, sign in again, and then delete the account."
+                  : err?.message || "Please try again.",
+              );
+            } finally {
+              setLoggingOut(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   if (loading) {
@@ -985,29 +1025,35 @@ export default function ProfileScreen(): React.ReactElement {
   const roleShort = profile?.role ? humanizeRole(profile.role) : "Super Admin";
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+    <View style={[styles.safeArea, { backgroundColor: "#0B3C5D" }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { backgroundColor: colors.background }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Screen title */}
-        <Text style={[styles.screenTitle, { color: colors.subText }]}>
-          {extra.adminProfile}
-        </Text>
-
-        {/* Header card */}
-        <View style={[styles.headerCard, { backgroundColor: colors.card }]}>
-          <View style={styles.avatarCircle}>
-            <Ionicons name="person-outline" size={26} color="#fff" />
+        <View
+          style={[
+            styles.headerCard,
+            {
+              backgroundColor: "#0B3C5D",
+              marginHorizontal: -16,
+              marginTop: 0,
+              paddingTop: insets.top + 22,
+              paddingBottom: 22,
+              paddingHorizontal: 20,
+              borderTopLeftRadius: 0,
+              borderTopRightRadius: 0,
+              borderBottomLeftRadius: 28,
+              borderBottomRightRadius: 28,
+            },
+          ]}
+        >
+          <View style={[styles.avatarCircle, { backgroundColor: "#FFFFFF" }]}>
+            <Ionicons name="person" size={26} color="#111111" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.profileName, { color: colors.text }]}>
-              {displayName}
-            </Text>
-            <Text style={[styles.profileRole, { color: colors.subText }]}>
-              {roleTitle}
-            </Text>
+            <Text style={[styles.profileName, { color: "#FFFFFF" }]}>{displayName}</Text>
+            <Text style={[styles.profileRole, { color: "#E5E5EA" }]}>{roleTitle}</Text>
           </View>
         </View>
 
@@ -1117,6 +1163,17 @@ export default function ProfileScreen(): React.ReactElement {
           )}
         </TouchableOpacity>
 
+        <TouchableOpacity
+          onPress={handleDeleteAccount}
+          activeOpacity={0.8}
+          disabled={loggingOut}
+          style={{ alignItems: "center", marginTop: 14 }}
+        >
+          <Text style={{ color: "#FF3B30", fontWeight: "700", fontSize: 14 }}>
+            Delete account
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: colors.subText }]}>
             {extra.footerLine1}
@@ -1157,7 +1214,7 @@ export default function ProfileScreen(): React.ReactElement {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: colors.card }]}>
             <View style={styles.modalIconBox}>
-              <Ionicons name="log-out-outline" size={28} color="#E53E3E" />
+              <Ionicons name="log-out-outline" size={28} color="#FF3B30" />
             </View>
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               {t.logoutConfirm}
@@ -1181,7 +1238,7 @@ export default function ProfileScreen(): React.ReactElement {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -1190,7 +1247,7 @@ export default function ProfileScreen(): React.ReactElement {
 // ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 30, paddingTop: 12 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 30, paddingTop: 0 },
   centered: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },
   loadingText: { fontSize: 14 },
 
@@ -1215,17 +1272,19 @@ const styles = StyleSheet.create({
   profileName: { fontSize: 18, fontWeight: "800" },
   profileRole: { fontSize: 12, marginTop: 2 },
 
-  statsRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  statsRow: { flexDirection: "row", gap: 10, marginBottom: 12, marginTop: 16 },
   statCard: {
     flex: 1,
-    backgroundColor: TEAL,
-    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
     paddingVertical: 14,
     paddingHorizontal: 6,
     alignItems: "center",
   },
-  statValue: { color: "#fff", fontSize: 22, fontWeight: "800" },
-  statLabel: { color: "#E6F7F5", fontSize: 10, marginTop: 2, fontWeight: "500" },
+  statValue: { color: "#111111", fontSize: 22, fontWeight: "800" },
+  statLabel: { color: "#8E8E93", fontSize: 10, marginTop: 2, fontWeight: "500" },
 
   sectionTitle: {
     fontSize: 14,
@@ -1332,7 +1391,7 @@ const styles = StyleSheet.create({
   },
   modalDangerBtn: {
     flex: 1,
-    backgroundColor: "#E53E3E",
+    backgroundColor: "#FF3B30",
     borderRadius: 10,
     paddingVertical: 13,
     alignItems: "center",
@@ -1360,7 +1419,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: "#EBF4FF",
+    backgroundColor: "#E8F1FF",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1404,7 +1463,7 @@ const styles = StyleSheet.create({
   },
   optionPillActive: { backgroundColor: NAVY, borderColor: NAVY },
   optionPillText: { fontSize: 13, fontWeight: "600" },
-  optionPillTextActive: { color: "#fff" },
+  optionPillTextActive: { color: "#FFFFFF" },
   themeRow: { flexDirection: "row", gap: 8, width: "100%" },
   themeCard: {
     flex: 1,
@@ -1417,7 +1476,7 @@ const styles = StyleSheet.create({
   },
   themeCardActive: { backgroundColor: NAVY, borderColor: NAVY },
   themeCardText: { fontSize: 11, fontWeight: "700" },
-  themeCardTextActive: { color: "#fff" },
+  themeCardTextActive: { color: "#FFFFFF" },
   settingsInfoRow: {
     flexDirection: "row",
     alignItems: "center",

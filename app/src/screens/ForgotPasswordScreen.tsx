@@ -1,120 +1,29 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
-} from "firebase/firestore";
+import { AuthField, AuthScreen, NAVY } from "../../../components/AuthChrome";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { db } from "../../../firebaseConfig";
+import { requestResetCode } from "../../../hooks/authSession";
 
-// ── EmailJS Config ─────────────────────────────────────────────────────────────
-const EMAILJS = {
-  CONSUMER: {
-    SERVICE_ID: "service_ppos2gl",
-    TEMPLATE_ID: "template_wnuezjd",
-    PUBLIC_KEY: "83JP4TIBzm32sCEDB",
-    PRIVATE_KEY: "FVcfX-d6wCX9gpEg_a25B",
-  },
-  ADMIN: {
-    SERVICE_ID: "service_wynnt38",
-    TEMPLATE_ID: "template_p7vjo2g",
-    PUBLIC_KEY: "hMZkNajE1DpuQeOMQ",
-    PRIVATE_KEY: "n5Zknt7IKTmMQdj_C9dDA",
-  },
-};
-
+// The reset code is generated, emailed (EmailJS) and checked by the backend.
+// After it is verified, Firebase sends its own password-reset link.
 type PortalType = "consumer" | "admin";
-
-function generateOTP(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
-async function sendOTPviaEmailJS(
-  toEmail: string,
-  otp: string,
-  portal: PortalType,
-): Promise<void> {
-  const config = portal === "admin" ? EMAILJS.ADMIN : EMAILJS.CONSUMER;
-  const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      service_id: config.SERVICE_ID,
-      template_id: config.TEMPLATE_ID,
-      user_id: config.PUBLIC_KEY,
-      accessToken: config.PRIVATE_KEY,
-      template_params: { to_email: toEmail, otp_code: otp },
-    }),
-  });
-  const responseText = await res.text();
-  if (!res.ok)
-    throw new Error(`EmailJS Error: ${res.status} - ${responseText}`);
-}
-
-// FIX: Detects portal AND returns the Firestore document ID so we can store OTP there
-async function detectPortalAndEmail(input: string): Promise<{
-  portal: PortalType;
-  foundEmail: string;
-  docId: string;
-  collectionName: string;
-}> {
-  const isEmail = input.includes("@");
-
-  // Check admins first
-  const adminQ = isEmail
-    ? query(collection(db, "admins"), where("email", "==", input))
-    : query(collection(db, "admins"), where("adminId", "==", input));
-  const adminSnap = await getDocs(adminQ);
-  if (!adminSnap.empty) {
-    return {
-      portal: "admin",
-      foundEmail: isEmail ? input : adminSnap.docs[0].data().email,
-      docId: adminSnap.docs[0].id,
-      collectionName: "admins",
-    };
-  }
-
-  // Then check consumers
-  const consumerQ = isEmail
-    ? query(collection(db, "consumers"), where("email", "==", input))
-    : query(collection(db, "consumers"), where("consumerId", "==", input));
-  const consumerSnap = await getDocs(consumerQ);
-  if (!consumerSnap.empty) {
-    return {
-      portal: "consumer",
-      foundEmail: isEmail ? input : consumerSnap.docs[0].data().email,
-      docId: consumerSnap.docs[0].id,
-      collectionName: "consumers",
-    };
-  }
-
-  throw new Error("No account found with this email or ID.");
-}
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [detectedPortal, setDetectedPortal] = useState<PortalType | null>(null);
 
-  const isAdmin = detectedPortal === "admin";
-  const accent = isAdmin ? "#1A73E8" : "#2EC4B6";
-  const noticeBg = isAdmin ? "#F0F4FF" : "#F0FFFE";
-  const noticeBdr = isAdmin ? "#C7D7F9" : "#CCF5F2";
+  const accent = NAVY;
+  const noticeBg = "#E8F1FF";
+  const noticeBdr = "#E5E5EA";
 
   const handleSendCode = async () => {
     if (!email.trim()) {
@@ -123,37 +32,26 @@ export default function ForgotPasswordScreen() {
     }
     setLoading(true);
     try {
-      const { portal, foundEmail, docId, collectionName } =
-        await detectPortalAndEmail(email.trim());
-      setDetectedPortal(portal);
-
-      const otp = generateOTP();
-      const expiresAt = Date.now() + 10 * 60 * 1000;
-
-      // FIX: Store OTP in Firestore — never pass it through navigation params
-      await updateDoc(doc(db, collectionName, docId), {
-        resetOtp: otp,
-        resetOtpExpiresAt: expiresAt,
-      });
-
-      await sendOTPviaEmailJS(foundEmail, otp, portal);
-
-      Alert.alert("Code Sent", "A 6-digit code has been sent to your email.", [
-        {
-          text: "OK",
-          onPress: () =>
-            router.push({
-              pathname: "/src/screens/ResetOTPVerifyScreen",
-              params: {
-                email: foundEmail,
-                docId,
-                collectionName,
-                portal,
-                // FIX: No OTP or expiresAt in params — fetched from Firestore on verify
-              },
-            }),
-        },
-      ]);
+      const identifier = email.trim();
+      const res = await requestResetCode(identifier);
+      setDetectedPortal(res.portal);
+      const goNext = () =>
+        router.push({
+          pathname: "/src/screens/ResetOTPVerifyScreen",
+          params: {
+            identifier,
+            email: res.maskedEmail || "your email",
+            portal: res.portal,
+            resendIn: String(res.resendIn ?? 60),
+          },
+        });
+      if (res.alreadySent) {
+        goNext();
+      } else {
+        Alert.alert("Code Sent", `A 6-digit code has been sent to ${res.maskedEmail || "your email"}.`, [
+          { text: "OK", onPress: goNext },
+        ]);
+      }
     } catch (error: any) {
       Alert.alert("Error", error.message || "Something went wrong.");
     } finally {
@@ -161,55 +59,33 @@ export default function ForgotPasswordScreen() {
     }
   };
 
+  const isAdmin = detectedPortal === "admin";
+
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      keyboardShouldPersistTaps="handled"
-    >
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
-      <Text style={styles.headerTitle}>
-        {isAdmin ? "Admin Password Reset" : "Password Reset"}
-      </Text>
-
-      <View style={[styles.iconContainer, { backgroundColor: accent }]}>
-        <Ionicons name="mail-outline" size={32} color="#FFFFFF" />
-      </View>
-
-      <Text style={styles.title}>Reset Your Password</Text>
+    <AuthScreen>
+      <Text style={styles.title}>Reset password</Text>
       <Text style={styles.subtitle}>
         {isAdmin
-          ? "Enter your registered email or Admin ID. We'll send you an OTP to verify your identity."
-          : "Enter your registered email or Consumer ID. We'll send you an OTP to verify your identity."}
+          ? "Enter the admin email or Admin ID. We will send a 6-digit code."
+          : "Enter your email, Consumer ID, or Admin ID. We will send a 6-digit code."}
       </Text>
 
-      <Text style={styles.label}>Enter your Email or ID</Text>
-      <TextInput
-        style={styles.input}
-        placeholder={
-          isAdmin
-            ? "Enter your Email or Admin ID"
-            : "Enter your Email or Consumer ID"
-        }
-        placeholderTextColor="#B0BEC5"
+      <AuthField
+        icon="mail-outline"
+        placeholder="Email or ID"
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
+        autoCorrect={false}
       />
 
-      <View
-        style={[
-          styles.noticeBox,
-          { backgroundColor: noticeBg, borderColor: noticeBdr },
-        ]}
-      >
-        <Ionicons name="checkmark-circle" size={18} color={accent} />
+      <View style={[styles.noticeBox, { backgroundColor: noticeBg, borderColor: noticeBdr }]}>
+        <Ionicons name="shield-checkmark" size={18} color={accent} />
         <View style={styles.noticeTextContainer}>
-          <Text style={styles.noticeTitle}>Secure Verification</Text>
+          <Text style={styles.noticeTitle}>Secure verification</Text>
           <Text style={styles.noticeText}>
-            A 6-digit code will be sent to your registered email for
-            verification.
+            The code goes to the email saved on the account.
           </Text>
         </View>
       </View>
@@ -220,26 +96,25 @@ export default function ForgotPasswordScreen() {
         disabled={loading}
       >
         {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
+          <ActivityIndicator color="#111111" />
         ) : (
-          <Text style={styles.sendButtonText}>Send Code</Text>
+          <>
+            <Ionicons name="paper-plane-outline" size={18} color="#111111" />
+            <Text style={styles.sendButtonText}>Send code</Text>
+          </>
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.push("/src/screens/LoginScreen")}
-      >
-        <Text style={styles.backButtonText}>Back to Login</Text>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.push("/src/screens/LoginScreen")}>
+        <Ionicons name="arrow-back" size={16} color="#374151" />
+        <Text style={styles.backButtonText}>Back to sign in</Text>
       </TouchableOpacity>
 
       <Text style={styles.supportText}>
-        Need help? Contact support at{" "}
-        <Text style={[styles.supportLink, { color: accent }]}>
-          1800-xxx-xxxx
-        </Text>
+        Need help? Call the helpline{" "}
+        <Text style={[styles.supportLink, { color: accent }]}>118</Text>
       </Text>
-    </ScrollView>
+    </AuthScreen>
   );
 }
 
@@ -255,7 +130,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: "Poppins_600SemiBold",
     fontSize: 16,
-    color: "#1F2933",
+    color: "#111111",
     marginBottom: 32,
   },
   iconContainer: {
@@ -268,19 +143,16 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 22,
-    color: "#1F2933",
-    marginBottom: 10,
-    textAlign: "center",
+    fontSize: 24,
+    color: "#111111",
   },
   subtitle: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    color: "#6B7280",
-    textAlign: "center",
+    color: "#8E8E93",
     lineHeight: 20,
-    marginBottom: 28,
-    paddingHorizontal: 8,
+    marginTop: 4,
+    marginBottom: 18,
   },
   label: {
     fontFamily: "Inter_500Medium",
@@ -293,43 +165,45 @@ const styles = StyleSheet.create({
     width: "100%",
     backgroundColor: "#F9FAFB",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#E5E5EA",
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 13,
     fontFamily: "Inter_400Regular",
     fontSize: 14,
-    color: "#1F2933",
+    color: "#111111",
     marginBottom: 16,
   },
   noticeBox: {
     flexDirection: "row",
     alignItems: "flex-start",
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 12,
     padding: 12,
     width: "100%",
-    marginBottom: 28,
+    marginBottom: 18,
     gap: 10,
   },
   noticeTextContainer: { flex: 1 },
   noticeTitle: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 13,
-    color: "#1F2933",
+    color: NAVY,
     marginBottom: 2,
   },
   noticeText: {
     fontFamily: "Inter_400Regular",
     fontSize: 12,
-    color: "#6B7280",
+    color: NAVY,
     lineHeight: 18,
   },
   sendButton: {
     width: "100%",
-    borderRadius: 8,
+    borderRadius: 14,
     paddingVertical: 15,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
     marginBottom: 12,
   },
   sendButtonText: {
@@ -339,11 +213,14 @@ const styles = StyleSheet.create({
   },
   backButton: {
     width: "100%",
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: "#D1D5DB",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
     paddingVertical: 14,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
     marginBottom: 24,
     backgroundColor: "#FFFFFF",
   },
@@ -355,7 +232,7 @@ const styles = StyleSheet.create({
   supportText: {
     fontFamily: "Inter_400Regular",
     fontSize: 12,
-    color: "#9CA3AF",
+    color: "#8E8E93",
     textAlign: "center",
   },
   supportLink: { fontFamily: "Inter_500Medium" },

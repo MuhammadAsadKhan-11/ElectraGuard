@@ -4,17 +4,25 @@ import * as nodemailer from "nodemailer";
 
 admin.initializeApp();
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: "asadkhans2310861@gmail.com",        // Apni app Gmail daalo
-    pass: "tyme nzuf czku mslo", // Gmail App Password daalo
-  },
-});
+function mailTransport() {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Email is not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD.",
+    );
+  }
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: { user, pass },
+  });
+}
 
 // ─── Send OTP ────────────────────────────────────────────────
 export const sendAdminOTP = functions.https.onCall(async (data) => {
   const { email } = data;
+  const transporter = mailTransport();
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = Date.now() + 5 * 60 * 1000;
@@ -25,7 +33,7 @@ export const sendAdminOTP = functions.https.onCall(async (data) => {
   });
 
   await transporter.sendMail({
-    from: "ElectraGuard <yourapp@gmail.com>",
+    from: `ElectraGuard <${process.env.GMAIL_USER}>`,
     to: email,
     subject: "ElectraGuard Admin OTP",
     html: `

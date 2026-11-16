@@ -1,433 +1,271 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { Timestamp, doc, getDoc, updateDoc } from "firebase/firestore";
+import { AuthField, AuthScreen, NAVY, OtpInput } from "../../../components/AuthChrome";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { auth, db } from "../../../firebaseConfig";
+import { auth } from "../../../firebaseConfig";
+import { ApiError } from "../../../hooks/apiClient";
+import { PortalRole, requestLoginOtp, signOutEverywhere, verifyLoginOtp } from "../../../hooks/authSession";
 
-const EMAILJS_SERVICE_ID = process.env.EXPO_PUBLIC_EMAILJS_SERVICE_ID!;
-const EMAILJS_PUBLIC_KEY = process.env.EXPO_PUBLIC_EMAILJS_PUBLIC_KEY!;
-const EMAILJS_PRIVATE_KEY = process.env.EXPO_PUBLIC_EMAILJS_PRIVATE_KEY!;
-const EMAILJS_CONSUMER_TEMPLATE_ID = process.env.EXPO_PUBLIC_EMAILJS_CONSUMER_TEMPLATE_ID!;
-const EMAILJS_ADMIN_TEMPLATE_ID = process.env.EXPO_PUBLIC_EMAILJS_ADMIN_TEMPLATE_ID!;
-
+// The user is already signed in with their password here; the backend only
+// accepts their API calls after this code is verified for this sign-in.
 export default function LoginOTPScreen() {
   const params = useLocalSearchParams<{
     email: string;
-    password: string;
     role: string;
-    consumerDocId?: string;
-    adminDocId?: string;
-    isRegistering?: string;
+    expiresIn?: string;
+    resendIn?: string;
   }>();
 
-  const {
-    email,
-    password,
-    role,
-    consumerDocId = "",
-    adminDocId = "",
-    isRegistering = "false",
-  } = params;
+  const email = params.email ?? "";
+  const role: PortalRole = String(params.role).toLowerCase() === "admin" ? "admin" : "consumer";
+  const isAdmin = role === "admin";
 
-  const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [expiresAt, setExpiresAt] = useState(() => Date.now() + Number(params.expiresIn || 600) * 1000);
+  const [now, setNow] = useState(Date.now());
+  const [error, setError] = useState("");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const isAdmin = role === "Admin";
-  const firestoreCol = isAdmin ? "admins" : "consumers";
-  const docId = isAdmin ? adminDocId : consumerDocId;
-  const templateId = isAdmin
-    ? EMAILJS_ADMIN_TEMPLATE_ID
-    : EMAILJS_CONSUMER_TEMPLATE_ID;
-
-  useEffect(() => {
-    startCountdown();
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
-
-  const startCountdown = () => {
-    setCountdown(60);
+  const startCountdown = (seconds: number) => {
+    setCountdown(Math.max(0, Math.round(seconds)));
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current!);
-          return 0;
-        }
-        return prev - 1;
-      });
+      setNow(Date.now());
+      setCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
   };
 
-  // ── Resend OTP ───────────────────────────────────────────────────────────────
+  useEffect(() => {
+    // No signed-in user means this screen was opened directly: go back to login.
+    if (!auth.currentUser) {
+      router.replace("/src/screens/LoginScreen");
+      return;
+    }
+    startCountdown(Number(params.resendIn || 60));
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const expired = now > expiresAt;
+  const minutesLeft = Math.max(0, Math.ceil((expiresAt - now) / 60000));
+
+  // ── Resend OTP (server enforces cooldown + hourly limit) ────────────────────
   const handleResendOTP = async () => {
-    if (countdown > 0) return;
+    if (countdown > 0 || resendLoading) return;
     setResendLoading(true);
+    setError("");
     try {
-      const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      const otpExpiresAt = Date.now() + 10 * 60 * 1000;
-
-      await updateDoc(doc(db, firestoreCol, docId), {
-        loginOtp: newOtp,
-        loginOtpExpiresAt: otpExpiresAt,
-        isVerified: false,
-        lastVerifiedAt: null,
-      });
-
-      const response = await fetch(
-        "https://api.emailjs.com/api/v1.0/email/send",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            service_id: EMAILJS_SERVICE_ID,
-            template_id: templateId,
-            user_id: EMAILJS_PUBLIC_KEY,
-            accessToken: EMAILJS_PRIVATE_KEY,
-            template_params: { to_email: email, otp_code: newOtp },
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        const txt = await response.text();
-        throw new Error(`EmailJS error: ${txt}`);
-      }
-
-      Alert.alert("OTP Sent", `A new OTP has been sent to ${email}.`);
-      startCountdown();
+      const res = await requestLoginOtp(role, true);
+      setOtp("");
+      setExpiresAt(Date.now() + (res.expiresIn ?? 600) * 1000);
+      startCountdown(res.resendIn ?? 60);
+      Alert.alert("Code Sent", `A new code has been sent to ${res.maskedEmail || email}.`);
     } catch (err: any) {
-      Alert.alert("Error", err.message || "Failed to resend OTP.");
+      const msg = err?.message || "Failed to resend the code.";
+      setError(msg);
+      if (err instanceof ApiError && err.status === 429) {
+        const wait = Number(/(\d+) seconds/.exec(msg)?.[1] ?? 0);
+        if (wait) startCountdown(wait);
+      }
     } finally {
       setResendLoading(false);
     }
   };
 
-  // ── Verify OTP & Login ───────────────────────────────────────────────────────
+  // ── Verify OTP ───────────────────────────────────────────────────────────────
   const handleVerify = async () => {
-    if (!otp || otp.length !== 6) {
-      Alert.alert("Error", "Please enter the 6-digit OTP.");
+    if (!/^\d{6}$/.test(otp.trim())) {
+      setError("Please enter the 6-digit code.");
       return;
     }
     setLoading(true);
+    setError("");
     try {
-      const docRef = doc(db, firestoreCol, docId);
-      const docSnap = await getDoc(docRef);
-
-      if (!docSnap.exists()) {
-        Alert.alert(
-          "Error",
-          `${isAdmin ? "Admin" : "Consumer"} record not found.`,
-        );
-        setLoading(false);
-        return;
-      }
-
-      const data = docSnap.data();
-      const storedOtp = data?.loginOtp as string;
-      const expiresAt = data?.loginOtpExpiresAt as number;
-
-      if (Date.now() > expiresAt) {
-        Alert.alert(
-          "OTP Expired",
-          "Your OTP has expired. Please request a new one.",
-        );
-        setLoading(false);
-        return;
-      }
-
-      if (otp.trim() !== storedOtp) {
-        Alert.alert("Invalid OTP", "The OTP you entered is incorrect.");
-        setLoading(false);
-        return;
-      }
-
-      // OTP valid — sign in with Firebase Auth
-      await signInWithEmailAndPassword(auth, email, password);
-
-      // Update Firestore: mark verified, clear OTP
-      await updateDoc(docRef, {
-        isVerified: true,
-        lastVerifiedAt: Timestamp.now().toMillis(),
-        loginOtp: null,
-        loginOtpExpiresAt: null,
-      });
-
-      router.replace((isAdmin ? "/src/Admin" : "/src/Consumer") as any);
+      const res = await verifyLoginOtp(otp.trim());
+      router.replace((res.role === "admin" ? "/src/Admin" : "/src/Consumer") as any);
     } catch (err: any) {
-      Alert.alert("Error", err.message || "Verification failed.");
+      setError(err?.message || "Verification failed.");
+      setOtp("");
     } finally {
       setLoading(false);
     }
   };
 
+  const cancel = async () => {
+    try {
+      await signOutEverywhere();
+    } finally {
+      router.canGoBack() ? router.back() : router.replace("/src/screens/LoginScreen");
+    }
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
+    <AuthScreen>
+      <Text style={styles.title}>Verify your email</Text>
+      <Text style={styles.subtitle}>
+        Enter the 6-digit code sent to{"\n"}
+        <Text style={styles.emailHighlight}>{email}</Text>
+      </Text>
+
+      <AuthField icon={isAdmin ? "shield-checkmark-outline" : "mail-outline"} value={email} editable={false} />
+
+      <Text style={styles.codeLabel}>Verification code</Text>
+      <OtpInput value={otp} onChangeText={(v: string) => { setOtp(v); if (error) setError(""); }} />
+      <View style={[styles.notice, expired && styles.noticeExpired]}>
+        <Ionicons name={expired ? "alert-circle-outline" : "time-outline"} size={16} color={expired ? "#B91C1C" : "#111111"} />
+        <Text style={[styles.noticeText, expired && { color: "#B91C1C" }]}>
+          {expired
+            ? "This code has expired. Tap Resend to get a new one."
+            : `This code is valid for ${minutesLeft} more minute${minutesLeft === 1 ? "" : "s"}.`}
+        </Text>
+      </View>
+
+      {!!error && <Text style={styles.errorText}>{error}</Text>}
+
+      <TouchableOpacity
+        style={[styles.button, (loading || otp.length < 6) && styles.buttonDisabled]}
+        onPress={handleVerify}
+        disabled={loading || otp.length < 6}
       >
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
-        <Text style={styles.headerLabel}>
-          {isAdmin ? "Admin Authentication" : "Login Authentication"}
-        </Text>
-
-        <View style={styles.logoContainer}>
-          <Image
-            source={require("../../../assets/logo.png")}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </View>
-
-        <Text style={styles.brandName}>Electra Guard</Text>
-        <Text style={styles.subtitle}>
-          Utility Theft Detection & Analytics System
-        </Text>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>{isAdmin ? "Admin Email" : "Email"}</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            editable={false}
-            placeholderTextColor="#9CA3AF"
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordContainer}>
-            <TextInput
-              style={styles.passwordInput}
-              value={password}
-              editable={false}
-              secureTextEntry={!showPassword}
-              placeholderTextColor="#9CA3AF"
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-              <Ionicons
-                name={showPassword ? "eye-off-outline" : "eye-outline"}
-                size={20}
-                color="#6B7280"
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Email Verification Code</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter 6-digit code"
-            placeholderTextColor="#9CA3AF"
-            value={otp}
-            onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, ""))}
-            keyboardType="number-pad"
-            maxLength={6}
-          />
-          <Text style={styles.otpNote}>
-            OTP sent to {email}. Valid for 10 minutes.
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.forgotContainer}
-          onPress={() => router.push("/src/screens/ForgotPasswordScreen")}
-        >
-          <Text style={styles.forgotText}>Forgot Password?</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.loginButton}
-          onPress={handleVerify}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.loginButtonText}>Verify & Login</Text>
-          )}
-        </TouchableOpacity>
-
-        <View style={styles.resendContainer}>
-          <Text style={styles.resendText}>{"Didn't receive the code? "}</Text>
-          {resendLoading ? (
-            <ActivityIndicator size="small" color="#0B3C5D" />
-          ) : countdown > 0 ? (
-            <Text style={styles.resendCountdown}>Resend in {countdown}s</Text>
-          ) : (
-            <TouchableOpacity onPress={handleResendOTP}>
-              <Text style={styles.resendLink}>Resend OTP</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {!isAdmin && (
-          <Text style={styles.registerText}>
-            {"Don't have an account? "}
-            <Text
-              style={styles.registerLink}
-              onPress={() => router.push("/src/screens/RegisterScreen")}
-            >
-              Register Now
-            </Text>
-          </Text>
+        {loading ? (
+          <ActivityIndicator color="#111111" />
+        ) : (
+          <>
+            <Ionicons name="shield-checkmark-outline" size={18} color="#111111" />
+            <Text style={styles.buttonText}>Verify and continue</Text>
+          </>
         )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </TouchableOpacity>
+
+      <View style={styles.resendRow}>
+        <Text style={styles.resendText}>Didn't receive the code? </Text>
+        {resendLoading ? (
+          <ActivityIndicator size="small" color="#111111" />
+        ) : countdown > 0 ? (
+          <Text style={styles.resendCountdown}>Resend in {countdown}s</Text>
+        ) : (
+          <TouchableOpacity onPress={handleResendOTP}>
+            <Text style={styles.resendLink}>Resend</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <TouchableOpacity style={styles.backRow} onPress={cancel}>
+        <Ionicons name="arrow-back" size={16} color="#111111" />
+        <Text style={styles.backText}>Back to sign in</Text>
+      </TouchableOpacity>
+    </AuthScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    paddingHorizontal: 28,
-    paddingTop: 20,
-    paddingBottom: 40,
-  },
-  headerLabel: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    color: "#9CA3AF",
-    alignSelf: "flex-start",
-    marginBottom: 24,
-    letterSpacing: 0.5,
-  },
-  logoContainer: {
-    width: 64,
-    height: 64,
-    backgroundColor: "#0B3C5D",
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  logo: { width: 40, height: 40 },
-  brandName: {
+  title: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 22,
-    color: "#1F2933",
-    marginBottom: 4,
+    fontSize: 24,
+    color: "#111111",
   },
   subtitle: {
     fontFamily: "Inter_400Regular",
-    fontSize: 12,
-    color: "#6B7280",
-    marginBottom: 28,
-    textAlign: "center",
+    fontSize: 13,
+    color: "#8E8E93",
+    lineHeight: 20,
+    marginTop: 4,
+    marginBottom: 18,
   },
-  inputGroup: { width: "100%", marginBottom: 14 },
-  label: {
-    fontFamily: "Inter_500Medium",
+  emailHighlight: {
+    color: NAVY,
+    fontFamily: "Inter_600SemiBold",
+  },
+  codeLabel: {
+    fontFamily: "Inter_600SemiBold",
     fontSize: 13,
     color: "#374151",
-    marginBottom: 6,
+    marginBottom: 10,
+    marginTop: 4,
   },
-  input: {
-    width: "100%",
-    backgroundColor: "rgba(107, 114, 128, 0.08)",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    color: "#1F2933",
-    borderWidth: 1,
-    borderColor: "rgba(107, 114, 128, 0.15)",
-  },
-  passwordContainer: {
-    width: "100%",
-    backgroundColor: "rgba(107, 114, 128, 0.08)",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+  notice: {
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(107, 114, 128, 0.15)",
+    gap: 8,
+    backgroundColor: "#E8F1FF",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 18,
   },
-  passwordInput: {
-    flex: 1,
+  noticeText: {
     fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    color: "#1F2933",
+    fontSize: 12,
+    color: NAVY,
+    flexShrink: 1,
   },
-  otpNote: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 11,
-    color: "#6B7280",
-    marginTop: 6,
-  },
-  forgotContainer: { alignSelf: "flex-end", marginBottom: 20, marginTop: 4 },
-  forgotText: {
-    fontFamily: "Inter_400Regular",
+  noticeExpired: { backgroundColor: "#FEF2F2" },
+  errorText: {
+    fontFamily: "Inter_500Medium",
     fontSize: 13,
-    color: "#0B3C5D",
+    color: "#B91C1C",
+    textAlign: "center",
+    marginBottom: 12,
   },
-  loginButton: {
+  button: {
     width: "100%",
-    backgroundColor: "#0B3C5D",
-    borderRadius: 8,
+    backgroundColor: NAVY,
+    borderRadius: 14,
     paddingVertical: 15,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
     marginBottom: 16,
   },
-  loginButtonText: {
+  buttonDisabled: { opacity: 0.55 },
+  buttonText: {
     fontFamily: "Inter_600SemiBold",
-    fontSize: 15,
+    fontSize: 16,
     color: "#FFFFFF",
   },
-  resendContainer: {
+  resendRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     marginBottom: 16,
   },
   resendText: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    color: "#6B7280",
+    color: "#8E8E93",
   },
   resendLink: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 13,
-    color: "#0B3C5D",
+    color: NAVY,
   },
   resendCountdown: {
     fontFamily: "Inter_500Medium",
     fontSize: 13,
-    color: "#9CA3AF",
+    color: "#8E8E93",
   },
-  registerText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 13,
-    color: "#6B7280",
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
-  registerLink: { color: "#0B3C5D", fontFamily: "Inter_600SemiBold" },
+  backText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+    color: NAVY,
+  },
 });

@@ -1,4 +1,5 @@
 // app/src/Admin/createCaseScreen.tsx
+import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -16,21 +17,24 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Colors as AppColors } from "../../../constants/Colors";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { getStrings } from "../../../constants/caseScreensStrings";
-import { createCase } from "../../../hooks/useCasesApi";
+import {
+  EVIDENCE_MAX_FILES,
+  EVIDENCE_PICKER_TYPES,
+  checkEvidenceFile,
+  createCase,
+} from "../../../hooks/useCasesApi";
+import { palette } from "../../../theme";
 
-// Fallbacks: agar Colors.ts mein koi key missing ho to TypeScript/runtime error na aaye.
 const Colors = {
-  primary: "#2563eb",
-  text: "#111827",
-  textSecondary: "#6b7280",
-  white: "#ffffff",
-  bg: "#f5f6fa",
-  border: "#e5e7eb",
-  danger: "#ef4444",
-  ...(AppColors as Record<string, string>),
+  primary: palette.yellow,
+  text: palette.black,
+  textSecondary: palette.info,
+  white: palette.white,
+  bg: palette.grey,
+  border: palette.soft,
+  danger: palette.error,
 };
 
 type RiskLevel = "Low" | "Medium" | "High" | "Critical";
@@ -47,6 +51,20 @@ interface UploadedFile {
   name: string;
   type: "image" | "document";
   mimeType?: string;
+  size?: number | null;
+}
+
+// Rejects unsupported / oversized files before they are added (server re-checks).
+function acceptFiles(prev: UploadedFile[], picked: UploadedFile[]): UploadedFile[] {
+  const problems = picked.map((f) => checkEvidenceFile(f)).filter(Boolean) as string[];
+  const ok = picked.filter((f) => !checkEvidenceFile(f));
+  let next = [...prev, ...ok];
+  if (next.length > EVIDENCE_MAX_FILES) {
+    problems.push(`Only ${EVIDENCE_MAX_FILES} files can be attached to one case.`);
+    next = next.slice(0, EVIDENCE_MAX_FILES);
+  }
+  if (problems.length) Alert.alert("Some files were not added", problems.join("\n"));
+  return next;
 }
 
 const RISK_LEVELS: RiskLevel[] = ["Low", "Medium", "High", "Critical"];
@@ -132,15 +150,20 @@ const dd = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
-  itemActive: { backgroundColor: Colors.primary + "12" },
+  itemActive: { backgroundColor: "#E8F1FF" },
   itemText: { fontSize: 14, color: Colors.text },
-  itemTextActive: { color: Colors.primary, fontWeight: "600" },
+  itemTextActive: { color: "#111111", fontWeight: "700" },
 });
 
 const firstParam = (v: string | string[] | undefined) =>
   (Array.isArray(v) ? v[0] : v) || "";
 
-export default function CreateCaseScreen() {
+export default function CreateCaseScreen(props?: {
+  embedded?: boolean;
+  onClose?: () => void;
+  consumerId?: string;
+  consumerName?: string;
+}) {
   const router = useRouter();
   const { colors, language } = useAppSettings();
   const S = getStrings(language).createCase;
@@ -151,8 +174,8 @@ export default function CreateCaseScreen() {
     consumerId?: string | string[];
     consumerName?: string | string[];
   }>();
-  const prefilledConsumerId = firstParam(routeParams.consumerId);
-  const prefilledConsumerName = firstParam(routeParams.consumerName);
+  const prefilledConsumerId = props?.consumerId || firstParam(routeParams.consumerId);
+  const prefilledConsumerName = props?.consumerName || firstParam(routeParams.consumerName);
 
   const [consumerId, setConsumerId] = useState(prefilledConsumerId);
   const [consumerName, setConsumerName] = useState(prefilledConsumerName);
@@ -164,10 +187,14 @@ export default function CreateCaseScreen() {
   const [priority, setPriority] = useState<Priority | "">("");
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
 
   const goBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/src/Admin/CasesScreen" as any);
+    if (props?.onClose) {
+      props.onClose();
+      return;
+    }
+    router.replace("/src/Admin/CasesScreen" as any);
   };
 
   const pickImage = async () => {
@@ -188,8 +215,9 @@ export default function CreateCaseScreen() {
           name: a.fileName || `image_${Date.now()}_${i}.jpg`,
           type: "image",
           mimeType: a.mimeType || "image/jpeg",
+          size: a.fileSize,
         }));
-        setFiles((prev) => [...prev, ...picked]);
+        setFiles((prev) => acceptFiles(prev, picked));
       }
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not pick image.");
@@ -199,7 +227,7 @@ export default function CreateCaseScreen() {
   const pickDocument = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
+        type: EVIDENCE_PICKER_TYPES,
         copyToCacheDirectory: true,
         multiple: true,
       });
@@ -207,10 +235,11 @@ export default function CreateCaseScreen() {
         const picked: UploadedFile[] = result.assets.map((a) => ({
           uri: a.uri,
           name: a.name,
-          type: "document",
+          type: a.mimeType?.startsWith("image/") ? "image" : "document",
           mimeType: a.mimeType || "application/octet-stream",
+          size: a.size,
         }));
-        setFiles((prev) => [...prev, ...picked]);
+        setFiles((prev) => acceptFiles(prev, picked));
       }
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not pick document.");
@@ -237,6 +266,7 @@ export default function CreateCaseScreen() {
     }
 
     setSubmitting(true);
+    setProgress(files.length ? 0 : null);
     try {
       // Ek hi backend call: case Firestore mein banta hai, evidence upload hoti hai,
       // aur consumer ko notification chala jata hai — sab automatically.
@@ -250,15 +280,19 @@ export default function CreateCaseScreen() {
         inspector: inspector.trim() || undefined,
         priority,
         files,
-      })) as { caseNumber?: string } | undefined;
+      }, files.length ? (f) => setProgress(f) : undefined)) as { caseNumber?: string; notified?: boolean } | undefined;
 
-      Alert.alert(S.successTitle, S.successMsg(res?.caseNumber ?? ""), [
-        { text: "OK", onPress: goBack },
-      ]);
+      const saved = S.successMsg(res?.caseNumber ?? "");
+      const message =
+        res?.notified === false
+          ? `Case ${res?.caseNumber ?? ""} was saved. No consumer with that ID was found, so they were not notified.`
+          : saved;
+      Alert.alert(S.successTitle, message, [{ text: "OK", onPress: goBack }]);
     } catch (err: any) {
       Alert.alert(S.errorTitle, S.errorMsg(err?.message ?? String(err)));
     } finally {
       setSubmitting(false);
+      setProgress(null);
     }
   };
 
@@ -274,13 +308,13 @@ export default function CreateCaseScreen() {
           contentContainerStyle={{ paddingBottom: 40 }}
         >
           <View style={[styles.header, { backgroundColor: colors?.card ?? Colors.white }]}>
-            <TouchableOpacity onPress={goBack} style={styles.backBtn}>
-              <Text style={styles.backArrow}>←</Text>
+            <TouchableOpacity onPress={goBack} style={styles.markBtn} activeOpacity={0.8}>
+              <Ionicons name="folder-open-outline" size={18} color="#FFFFFF" />
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: colors?.text ?? Colors.text }]}>
               {S.title}
             </Text>
-            <View style={{ width: 40 }} />
+            <View style={{ width: 36 }} />
           </View>
 
           <View style={styles.form}>
@@ -382,7 +416,7 @@ export default function CreateCaseScreen() {
               </Text>
               <View style={styles.uploadBtnRow}>
                 <TouchableOpacity style={styles.uploadBtn} onPress={pickImage} activeOpacity={0.8}>
-                  <Text style={styles.uploadBtnIcon}>🖼</Text>
+                  <Ionicons name="image-outline" size={18} color="#FFFFFF" />
                   <Text style={styles.uploadBtnText}>{S.uploadImage}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -390,10 +424,8 @@ export default function CreateCaseScreen() {
                   onPress={pickDocument}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.uploadBtnIcon}>📄</Text>
-                  <Text style={[styles.uploadBtnText, { color: Colors.primary }]}>
-                    {S.uploadDocument}
-                  </Text>
+                  <Ionicons name="document-text-outline" size={18} color="#007AFF" />
+                  <Text style={[styles.uploadBtnText, { color: "#007AFF" }]}>{S.uploadDocument}</Text>
                 </TouchableOpacity>
               </View>
 
@@ -425,8 +457,12 @@ export default function CreateCaseScreen() {
             >
               {submitting ? (
                 <View style={styles.submitLoading}>
-                  <ActivityIndicator color="#fff" size="small" />
-                  <Text style={styles.submitBtnText}>{S.creating}</Text>
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <Text style={styles.submitBtnText}>
+                    {progress !== null && progress < 1
+                      ? `Uploading evidence ${Math.round(progress * 100)}%`
+                      : S.creating}
+                  </Text>
                 </View>
               ) : (
                 <Text style={styles.submitBtnText}>{S.createCase}</Text>
@@ -461,8 +497,14 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  backBtn: { padding: 6 },
-  backArrow: { fontSize: 22, color: Colors.primary, fontWeight: "600" },
+  markBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#007AFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
   form: { paddingHorizontal: 16, paddingTop: 4 },
   fieldWrap: { marginBottom: 16 },
@@ -491,12 +533,12 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   uploadBtnDoc: {
-    backgroundColor: Colors.primary + "15",
-    borderWidth: 1,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
     borderColor: Colors.primary,
   },
   uploadBtnIcon: { fontSize: 16 },
-  uploadBtnText: { fontSize: 13, fontWeight: "600", color: "#fff" },
+  uploadBtnText: { fontSize: 13, fontWeight: "600", color: "#FFFFFF" },
   fileList: { marginTop: 12, gap: 8 },
   fileItem: {
     flexDirection: "row",
@@ -526,7 +568,7 @@ const styles = StyleSheet.create({
   },
   submitBtnDisabled: { opacity: 0.7 },
   submitLoading: { flexDirection: "row", alignItems: "center", gap: 10 },
-  submitBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  submitBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
   cancelBtn: {
     borderRadius: 14,
     paddingVertical: 14,

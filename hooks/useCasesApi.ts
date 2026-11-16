@@ -4,25 +4,40 @@
 // NOTE: /api/cases* endpoints backend ke "doosre half" mein add honge — yeh file
 // unhi endpoints ko call karti hai (contract neeche comments mein hai).
 import { useCallback, useEffect, useState } from "react";
-import { auth } from "../firebaseConfig";
-import { API_BASE_URL } from "../constants/api";
+import { Platform } from "react-native";
+import { apiFetch, uploadWithProgress } from "./apiClient";
 import { useLiveRefresh } from "./useAdminApi";
 
-async function authedFetch(path: string, options: RequestInit = {}) {
-  const user = auth.currentUser;
-  const token = user ? await user.getIdToken() : null;
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({} as any));
-    throw new Error((body as any).detail || `Request failed (${res.status})`);
+// Shared client: fresh token, one retry on 401, timeouts, readable errors.
+async function authedFetch(path: string, options: RequestInit = {}): Promise<any> {
+  return apiFetch<any>(path, options);
+}
+
+// Evidence rules (mirrors the backend; the server re-checks everything).
+export const EVIDENCE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "heic", "pdf", "doc", "docx", "xls", "xlsx", "csv", "txt"];
+export const EVIDENCE_MAX_MB = 15;
+export const EVIDENCE_MAX_FILES = 10;
+export const EVIDENCE_PICKER_TYPES = [
+  "image/*",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/csv",
+  "text/plain",
+];
+
+/** Returns an error message for a picked file, or null when it is acceptable. */
+export function checkEvidenceFile(f: { name: string; size?: number | null }): string | null {
+  const ext = (f.name.split(".").pop() || "").toLowerCase();
+  if (!f.name.includes(".") || !EVIDENCE_EXTENSIONS.includes(ext)) {
+    return `"${f.name}" is not a supported type. Use: ${EVIDENCE_EXTENSIONS.join(", ")}.`;
   }
-  return res.json();
+  if (f.size && f.size > EVIDENCE_MAX_MB * 1024 * 1024) {
+    return `"${f.name}" is larger than ${EVIDENCE_MAX_MB} MB.`;
+  }
+  return null;
 }
 
 export type CaseStatus = "Open" | "In Progress" | "Closed" | "Rejected";
@@ -50,11 +65,26 @@ export interface TimelineEntryDTO {
 }
 
 export interface EvidenceItemDTO {
+  id: string;
   name: string;
   type: "image" | "document";
-  url: string;
+  url: string; // legacy entries only; S3 files use getEvidenceUrl()
+  category?: string;
+  fileName?: string;
+  fileType?: string;
+  extension?: string;
+  size?: number;
+  uploadedAt?: string | null;
   uploadedBy?: string;
   date?: string;
+  downloadable?: boolean;
+}
+
+export interface DownloadUrlDTO {
+  url: string;
+  expiresIn: number;
+  fileName: string;
+  contentType: string;
 }
 
 export interface CaseDetailDTO extends CaseSummaryDTO {
@@ -161,17 +191,23 @@ interface PickedFile {
   mimeType?: string;
 }
 
-function buildFormData(fields: Record<string, string>, files: PickedFile[]) {
+async function buildFormData(fields: Record<string, string>, files: PickedFile[]) {
   const fd = new FormData();
   Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
-  files.forEach((f) => {
-    // @ts-ignore React Native FormData file shape
-    fd.append("files", {
-      uri: f.uri,
-      name: f.name,
-      type: f.mimeType || "application/octet-stream",
-    });
-  });
+  for (const f of files) {
+    if (Platform.OS === "web") {
+      // Browsers need a real Blob; the {uri,name,type} shape only works on native.
+      const blob = await (await fetch(f.uri)).blob();
+      (fd as any).append("files", blob, f.name);
+    } else {
+      // @ts-ignore React Native FormData file shape
+      fd.append("files", {
+        uri: f.uri,
+        name: f.name,
+        type: f.mimeType || "application/octet-stream",
+      });
+    }
+  }
   return fd;
 }
 
@@ -185,8 +221,8 @@ export async function createCase(payload: {
   inspector?: string;
   priority: string;
   files: PickedFile[];
-}) {
-  const fd = buildFormData(
+}, onProgress?: (fraction: number) => void) {
+  const fd = await buildFormData(
     {
       consumerId: payload.consumerId,
       consumerName: payload.consumerName,
@@ -199,9 +235,46 @@ export async function createCase(payload: {
     },
     payload.files,
   );
-  // Backend: case Firestore mein banata hai, evidence upload karta hai, AUR
+  // Backend: case Firestore mein banata hai, evidence S3 par upload karta hai, AUR
   // consumer ko notification bhejta hai — sab ek hi call mein.
-  return authedFetch("/api/cases", { method: "POST", body: fd as any });
+  return uploadWithProgress<CaseDetailDTO & { notified?: boolean }>("/api/cases", fd, onProgress);
+}
+
+export async function addEvidence(
+  caseId: string,
+  files: PickedFile[],
+  note = "",
+  onProgress?: (fraction: number) => void,
+) {
+  const fd = await buildFormData({ note }, files);
+  return uploadWithProgress<CaseDetailDTO>(`/api/cases/${encodeURIComponent(caseId)}/evidence`, fd, onProgress);
+}
+
+export async function updateCaseStatus(caseId: string, status: CaseStatus, note = "") {
+  return authedFetch(`/api/cases/${encodeURIComponent(caseId)}/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, note }),
+  });
+}
+
+export async function addCaseRemark(caseId: string, message: string, notifyConsumer = true) {
+  return authedFetch(`/api/cases/${encodeURIComponent(caseId)}/remarks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, notifyConsumer }),
+  });
+}
+
+/** Fresh short-lived download URL for one evidence file (admin). */
+export async function getEvidenceUrl(
+  caseId: string,
+  evidenceId: string,
+  disposition: "attachment" | "inline" = "attachment",
+): Promise<DownloadUrlDTO> {
+  return authedFetch(
+    `/api/cases/${encodeURIComponent(caseId)}/evidence/${encodeURIComponent(evidenceId)}/url?disposition=${disposition}`,
+  );
 }
 
 export async function assignInspector(caseId: string, inspector: string) {
@@ -227,8 +300,9 @@ export async function escalateCase(
     description: string;
     files: PickedFile[];
   },
+  onProgress?: (fraction: number) => void,
 ) {
-  const fd = buildFormData(
+  const fd = await buildFormData(
     {
       escalationLevel: payload.escalationLevel,
       reason: payload.reason,
@@ -237,10 +311,7 @@ export async function escalateCase(
     payload.files,
   );
   // Backend riskLevel badhata hai, evidence save karta hai, consumer ko notify karta hai
-  return authedFetch(`/api/cases/${encodeURIComponent(caseId)}/escalate`, {
-    method: "POST",
-    body: fd as any,
-  });
+  return uploadWithProgress<CaseDetailDTO>(`/api/cases/${encodeURIComponent(caseId)}/escalate`, fd, onProgress);
 }
 
 // ── Inspectors (mockInspectors ki jagah, live list) ─────────────

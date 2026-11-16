@@ -6,7 +6,6 @@ import React from "react";
 import {
   ActivityIndicator,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -14,16 +13,17 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { StackBar } from "../../../components/AppChrome";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { AlertSeverity, useAlerts } from "../../../hooks/useAlertsApi";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
-const NAVY = "#0B3C5D";
+const NAVY = "#007AFF";
 
 const SEVERITY_STYLE: Record<AlertSeverity, { icon: IoniconsName; color: string }> = {
   critical: { icon: "warning-outline", color: "#E11D48" },
-  warning: { icon: "alert-circle-outline", color: "#F59E0B" },
+  warning: { icon: "alert-circle-outline", color: "#FF9500" },
   info: { icon: "information-circle-outline", color: "#1CA7A6" },
 };
 
@@ -51,25 +51,13 @@ export default function AlertsScreen(): React.ReactElement {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
-
-      {/* Header: back arrow + title */}
-      <View style={[styles.header, { backgroundColor: colors.card }]}>
-        <TouchableOpacity
-          onPress={goBack}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          activeOpacity={0.6}
-        >
-          <Ionicons name="arrow-back" size={24} color={NAVY} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.title, { color: colors.text }]}>System Alerts</Text>
-          <Text style={[styles.subtitle, { color: colors.subText }]}>
-            {activeCount} active notification{activeCount === 1 ? "" : "s"}
-          </Text>
-        </View>
-      </View>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StackBar
+        title="System alerts"
+        subtitle={`${activeCount} active notification${activeCount === 1 ? "" : "s"}`}
+        onBack={goBack}
+      />
 
       <ScrollView
         contentContainerStyle={styles.list}
@@ -118,7 +106,7 @@ export default function AlertsScreen(): React.ReactElement {
           })
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -156,5 +144,5 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 20,
   },
-  retryText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  retryText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
 });

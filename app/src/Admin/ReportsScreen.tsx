@@ -9,7 +9,6 @@ import {
   Alert,
   Dimensions,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   Share,
   StatusBar,
@@ -19,6 +18,8 @@ import {
   View,
 } from "react-native";
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from "react-native-svg";
+import { TabHero } from "../../../components/AppChrome";
+import NotificationBell from "../../../components/NotificationBell";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import {
   fetchReportCsv,
@@ -32,8 +33,8 @@ type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CHART_WIDTH = SCREEN_WIDTH - 64; // scroll padding (32) + card padding (32)
 
-const NAVY = "#0B3C5D";
-const TEAL = "#1CA7A6";
+const NAVY = "#007AFF";
+const TEAL = "#34C759";
 
 const PERIODS: { key: ReportPeriod; label: string; noun: string }[] = [
   { key: "7d", label: "Last 7 days", noun: "Week" },
@@ -42,10 +43,10 @@ const PERIODS: { key: ReportPeriod; label: string; noun: string }[] = [
 ];
 
 const INSIGHT_STYLE: Record<InsightType, { icon: IoniconsName; color: string }> = {
-  alert: { icon: "alert-circle-outline", color: "#E11D48" },
-  success: { icon: "trending-up-outline", color: "#0F9D8F" },
-  savings: { icon: "cash-outline", color: "#D97706" },
-  info: { icon: "information-circle-outline", color: "#2B6CB0" },
+  alert: { icon: "alert-circle-outline", color: "#FF3B30" },
+  success: { icon: "trending-up-outline", color: "#34C759" },
+  savings: { icon: "cash-outline", color: "#FF9500" },
+  info: { icon: "information-circle-outline", color: "#111111" },
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -148,7 +149,7 @@ const BarChart: React.FC<{
   );
 };
 
-const PIE_COLORS = { low: "#2A9D8F", medium: "#F4A261", high: "#E76F51" };
+const PIE_COLORS = { low: "#34C759", medium: "#FF9500", high: "#FF3B30" };
 
 const RiskPie: React.FC<{
   low: number;
@@ -184,7 +185,7 @@ const RiskPie: React.FC<{
     <View>
       <Svg width="100%" height={190} viewBox="0 0 320 190">
         {total === 0 ? (
-          <Circle cx={cx} cy={cy} r={r} fill="#E5E7EB" />
+          <Circle cx={cx} cy={cy} r={r} fill="#E5E5EA" />
         ) : (
           parts.map((p) => {
             if (p.pct <= 0) return null;
@@ -248,7 +249,7 @@ const StatCardView: React.FC<{
   subColor: string;
 }> = ({ icon, tint, value, label, changePct, goodWhenUp, cardColor, textColor, subColor }) => {
   const good = goodWhenUp ? changePct >= 0 : changePct <= 0;
-  const badgeColor = good ? "#16A34A" : "#E11D48";
+  const badgeColor = good ? "#34C759" : "#FF3B30";
   const rounded = Math.round(changePct);
   return (
     <View style={[styles.statCard, { backgroundColor: cardColor }]}>
@@ -298,29 +299,29 @@ export default function ReportsScreen(): React.ReactElement {
   const gridColor = colors.border;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <TabHero
+        title="Reports"
+        subtitle="Theft statistics and performance"
+        right={
+          <View style={styles.heroActions}>
+            <TouchableOpacity
+              style={styles.heroBell}
+              activeOpacity={0.8}
+              onPress={() => router.push("/src/Admin/AlertsScreen" as any)}
+            >
+              <Ionicons name="warning-outline" size={20} color="#0B3C5D" />
+            </TouchableOpacity>
+            <NotificationBell tintColor="#0B3C5D" style={styles.heroBell} />
+          </View>
+        }
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pullRefresh} />}
       >
-        {/* Header */}
-        <View style={[styles.headerCard, { backgroundColor: colors.card }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Reports & Analytics</Text>
-            <Text style={[styles.headerSubtitle, { color: colors.subText }]}>
-              Theft statistics and performance metrics
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.bellBtn}
-            activeOpacity={0.7}
-            onPress={() => router.push("/src/Admin/AlertsScreen" as any)}
-          >
-            <Ionicons name="notifications-outline" size={20} color={NAVY} />
-          </TouchableOpacity>
-        </View>
 
         {/* Filter + Export */}
         <View style={styles.filterRow}>
@@ -395,7 +396,7 @@ export default function ReportsScreen(): React.ReactElement {
             <View style={styles.statsGrid}>
               <StatCardView
                 icon="bar-chart"
-                tint="#2B6CB0"
+                tint="#007AFF"
                 value={String(Math.round(data.stats.totalCases.value))}
                 label={`Total Cases (${current.noun})`}
                 changePct={data.stats.totalCases.changePct}
@@ -406,7 +407,7 @@ export default function ReportsScreen(): React.ReactElement {
               />
               <StatCardView
                 icon="cash-outline"
-                tint="#E11D48"
+                tint="#FF3B30"
                 value={formatPKR(data.stats.revenueLoss.value)}
                 label="Revenue Loss"
                 changePct={data.stats.revenueLoss.changePct}
@@ -417,7 +418,7 @@ export default function ReportsScreen(): React.ReactElement {
               />
               <StatCardView
                 icon="shield-checkmark-outline"
-                tint="#0F9D8F"
+                tint="#34C759"
                 value={`${Math.round(data.stats.detectionRate.value)}%`}
                 label="Detection Rate"
                 changePct={data.stats.detectionRate.changePct}
@@ -428,7 +429,7 @@ export default function ReportsScreen(): React.ReactElement {
               />
               <StatCardView
                 icon="time-outline"
-                tint="#2B6CB0"
+                tint="#007AFF"
                 value={`${data.stats.avgResponseHours.value.toFixed(1)}h`}
                 label="Avg Response Time"
                 changePct={data.stats.avgResponseHours.changePct}
@@ -467,7 +468,7 @@ export default function ReportsScreen(): React.ReactElement {
               <Text style={[styles.chartTitle, { color: colors.text }]}>Revenue Loss by Area</Text>
               <BarChart
                 data={data.revenueLossByArea.map((a) => ({ label: a.area, value: a.amount }))}
-                color="#E5484D"
+                color="#FF3B30"
                 formatTick={compact}
                 textColor={colors.subText}
                 gridColor={gridColor}
@@ -499,7 +500,7 @@ export default function ReportsScreen(): React.ReactElement {
 
         <View style={{ height: 30 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -508,7 +509,16 @@ export default function ReportsScreen(): React.ReactElement {
 // ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 20 },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 },
+  heroActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  heroBell: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   headerCard: {
     flexDirection: "row",
@@ -529,7 +539,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#E8F1FF",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -559,7 +569,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
   },
-  exportText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  exportText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
   periodList: { borderWidth: 1, borderRadius: 10, marginBottom: 12, overflow: "hidden" },
   periodItem: { paddingHorizontal: 14, paddingVertical: 12 },
 
@@ -578,7 +588,7 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 20,
   },
-  retryText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  retryText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
   inlineError: { color: "#E11D48", fontSize: 12, marginBottom: 10 },
 
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 14 },

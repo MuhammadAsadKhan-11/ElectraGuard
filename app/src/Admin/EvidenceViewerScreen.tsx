@@ -1,22 +1,26 @@
 // app/src/Admin/EvidenceViewerScreen.tsx
 // Case Profile ke Evidence list mein kisi item par tap karne se yeh screen khulti hai.
-// Image ho to seedha dikhati hai; PDF/document ho to device ke default viewer mein
-// (ya browser mein) khol deti hai, jaisa ConsumerProfileScreen mein links khulte hain.
+// S3 evidence: a short-lived presigned URL is requested from the backend
+// (caseId + evidenceId params). Old entries still pass a stored `url`.
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
-  Linking,
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Colors } from "../../../constants/Colors";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { getStrings } from "../../../constants/caseScreensStrings";
+import { getEvidenceUrl } from "../../../hooks/useCasesApi";
+import { SignedUrlFetcher, openEvidence } from "../../../utils/evidenceDownload";
+
+const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) as string | undefined;
 
 export default function EvidenceViewerScreen() {
   const router = useRouter();
@@ -24,21 +28,64 @@ export default function EvidenceViewerScreen() {
   const S = getStrings(language).evidenceViewer;
   const params = useLocalSearchParams();
 
-  const url = (Array.isArray(params.url) ? params.url[0] : params.url) as string | undefined;
-  const type = (Array.isArray(params.type) ? params.type[0] : params.type) as
-    | "image"
-    | "document"
-    | undefined;
-  const name = (Array.isArray(params.name) ? params.name[0] : params.name) as string | undefined;
+  const legacyUrl = one(params.url as any);
+  const caseId = one(params.caseId as any);
+  const evidenceId = one(params.evidenceId as any);
+  const type = one(params.type as any) as "image" | "document" | undefined;
+  const name = one(params.name as any);
 
+  const fetcher: SignedUrlFetcher | null =
+    caseId && evidenceId
+      ? (d) => getEvidenceUrl(caseId, evidenceId, d)
+      : legacyUrl
+        ? async () => ({ url: legacyUrl, expiresIn: 0, fileName: name || "evidence", contentType: "" })
+        : null;
+
+  const [url, setUrl] = useState<string | null>(legacyUrl ?? null);
+  const [urlError, setUrlError] = useState<string | null>(null);
   const [imgLoading, setImgLoading] = useState(true);
   const [imgError, setImgError] = useState(false);
+  const [retried, setRetried] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const loadUrl = useCallback(async () => {
+    if (!caseId || !evidenceId) return;
+    setUrlError(null);
+    try {
+      const res = await getEvidenceUrl(caseId, evidenceId, "inline");
+      setUrl(res.url);
+    } catch (e: any) {
+      setUrlError(e?.message || S.couldNotLoad);
+    }
+  }, [caseId, evidenceId, S.couldNotLoad]);
+
+  useEffect(() => {
+    setImgError(false);
+    setImgLoading(true);
+    setRetried(false);
+    if (caseId && evidenceId) {
+      setUrl(null);
+      loadUrl();
+    } else {
+      setUrl(legacyUrl ?? null);
+    }
+  }, [caseId, evidenceId, legacyUrl, loadUrl]);
 
   const goBack = () => (router.canGoBack() ? router.back() : router.replace("/src/Admin/CasesScreen" as any));
 
-  const openExternally = () => {
-    if (url) Linking.openURL(url);
+  const openExternally = async (mode: "view" | "download" = "view") => {
+    if (!fetcher || busy) return;
+    setBusy(true);
+    try {
+      await openEvidence(fetcher, mode);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || S.couldNotLoad);
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const missing = !fetcher || (!!urlError && !url);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
@@ -49,12 +96,23 @@ export default function EvidenceViewerScreen() {
         <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
           {name || "Evidence"}
         </Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity onPress={() => openExternally("download")} style={styles.backBtn} disabled={!fetcher || busy}>
+          {busy ? <ActivityIndicator size="small" color={Colors.primary} /> : <Text style={styles.backArrow}>⬇</Text>}
+        </TouchableOpacity>
       </View>
 
-      {!url ? (
+      {missing ? (
         <View style={styles.center}>
-          <Text style={[styles.errorText, { color: colors.text }]}>{S.notFound}</Text>
+          <Text style={[styles.errorText, { color: colors.text }]}>{urlError || S.notFound}</Text>
+          {!!urlError && (
+            <TouchableOpacity style={styles.openBtn} onPress={loadUrl}>
+              <Text style={styles.openBtnText}>Retry</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : !url ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={Colors.primary} />
         </View>
       ) : type === "image" ? (
         <View style={styles.imageWrap}>
@@ -63,8 +121,8 @@ export default function EvidenceViewerScreen() {
           )}
           {imgError ? (
             <View style={styles.center}>
-              <Text style={[styles.errorText, { color: colors.text }]}>{S.couldNotLoad}</Text>
-              <TouchableOpacity style={styles.openBtn} onPress={openExternally}>
+              <Text style={[styles.errorText, { color: "#FFFFFF" }]}>{S.couldNotLoad}</Text>
+              <TouchableOpacity style={styles.openBtn} onPress={() => openExternally("view")}>
                 <Text style={styles.openBtnText}>{S.openInBrowser}</Text>
               </TouchableOpacity>
             </View>
@@ -75,6 +133,13 @@ export default function EvidenceViewerScreen() {
               resizeMode="contain"
               onLoadEnd={() => setImgLoading(false)}
               onError={() => {
+                // Presigned link may have expired: get a fresh one once.
+                if (caseId && evidenceId && !retried) {
+                  setRetried(true);
+                  setUrl(null);
+                  loadUrl();
+                  return;
+                }
                 setImgLoading(false);
                 setImgError(true);
               }}
@@ -89,8 +154,11 @@ export default function EvidenceViewerScreen() {
           <Text style={[styles.docSub, { color: colors.subText }]}>
             {S.docHint}
           </Text>
-          <TouchableOpacity style={styles.openBtn} onPress={openExternally}>
+          <TouchableOpacity style={styles.openBtn} onPress={() => openExternally("view")} disabled={busy}>
             <Text style={styles.openBtnText}>{S.openDocument}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.openBtn, styles.secondaryBtn]} onPress={() => openExternally("download")} disabled={busy}>
+            <Text style={[styles.openBtnText, { color: Colors.primary }]}>Download</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -106,7 +174,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     padding: 16,
     margin: 16,
-    marginTop: 40,
+    marginTop: 12,
     borderRadius: 16,
     shadowColor: "#000",
     shadowOpacity: 0.06,
@@ -130,5 +198,6 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     marginTop: 8,
   },
-  openBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  openBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
+  secondaryBtn: { backgroundColor: "transparent", borderWidth: 1, borderColor: Colors.primary },
 });

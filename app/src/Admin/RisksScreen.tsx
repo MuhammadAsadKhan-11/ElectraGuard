@@ -1,10 +1,10 @@
 // app/src/Admin/RisksScreen.tsx
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import NotificationBell from "../../../components/NotificationBell";
+import { TabHero } from "../../../components/AppChrome";
 import { formatNumber, palette, riskColor } from "../../../constants/adminUi";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import {
@@ -147,25 +148,23 @@ export default function RisksScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+    <View style={[styles.safe, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <TabHero
+        title="High-risk consumers"
+        subtitle="Accounts that need a closer look"
+        right={<NotificationBell tintColor="#0B3C5D" style={styles.heroBell} />}
+      />
       <ScrollView
         style={styles.container}
+        contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pullRefresh} />}
       >
-        {/* Header */}
-        <View style={[styles.header, { backgroundColor: colors.card }]}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            High Risk Consumers
-          </Text>
-          <NotificationBell />
-        </View>
-
         {/* Search */}
         <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Ionicons name="search" size={18} color="#8E8E93" />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
             placeholder="Search by ID, name or area..."
@@ -243,13 +242,15 @@ export default function RisksScreen() {
         </View>
         <View style={{ height: 20 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   container: { flex: 1 },
+  scroll: { paddingTop: 16 },
+  heroBell: { backgroundColor: "#FFFFFF", borderRadius: 12, padding: 6 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -270,15 +271,14 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 12,
+    borderRadius: 14,
     marginHorizontal: 16,
     marginBottom: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
   },
   searchIcon: { fontSize: 16, marginRight: 8 },
   searchInput: { flex: 1, fontSize: 14 },
@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
     borderColor: palette.danger,
   },
   filterText: { fontSize: 13, fontWeight: "500" },
-  filterTextActive: { color: "#fff", fontWeight: "600" },
+  filterTextActive: { color: "#FFFFFF", fontWeight: "600" },
   listContainer: { paddingHorizontal: 16, gap: 12 },
   consumerCard: {
     borderRadius: 16,
@@ -352,5 +352,5 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginTop: 8,
   },
-  retryText: { color: "#fff", fontWeight: "700" },
+  retryText: { color: "#FFFFFF", fontWeight: "700" },
 });

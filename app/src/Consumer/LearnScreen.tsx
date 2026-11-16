@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Linking,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -19,6 +18,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { TabHero } from "../../../components/AppChrome";
+import ConsumerBell from "../../../components/ConsumerBell";
 import { db } from "../../../firebaseConfig";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { seedAllData } from "../../../seedFirebase";
@@ -151,7 +152,7 @@ const SubsectionCard: React.FC<{ sub: Subsection }> = ({ sub }) => (
         <Ionicons
           name="remove"
           size={13}
-          color="#E53E3E"
+          color="#111111"
           style={{ marginTop: 3 }}
         />
         <Text style={styles.bulletText}>{bp}</Text>
@@ -421,7 +422,7 @@ export default function LearnScreen(): React.ReactElement {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#E53E3E" />
+        <ActivityIndicator size="large" color="#111111" />
         <Text style={styles.loadingText}>Loading content...</Text>
       </View>
     );
@@ -442,8 +443,13 @@ export default function LearnScreen(): React.ReactElement {
 
   // ── Main UI ───────────────────────────────────────────────
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <TabHero
+        title="Energy awareness"
+        subtitle="Learn how to use less electricity and spot theft."
+        right={<ConsumerBell />}
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -451,25 +457,16 @@ export default function LearnScreen(): React.ReactElement {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#E53E3E"]}
-            tintColor="#E53E3E"
+            colors={["#007AFF"]}
+            tintColor="#007AFF"
           />
         }
       >
-        {/* Page Header */}
-        <View style={styles.pageHeader}>
-          <Text style={styles.pageTitle}>Energy Awareness</Text>
-          <Text style={styles.pageSubtitle}>
-            Learn how to reduce electricity usage and prevent theft.
-          </Text>
-        </View>
-
-        {/* Dynamic sections from Firebase learnContent */}
         {sections.map(renderSection)}
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -477,37 +474,37 @@ export default function LearnScreen(): React.ReactElement {
 // STYLES
 // ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F7F8FC" },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 16 },
+  safeArea: { flex: 1, backgroundColor: "#F2F2F7" },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 },
 
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#F7F8FC",
+    backgroundColor: "#F2F2F7",
     gap: 14,
   },
-  loadingText: { color: "#718096", fontSize: 14, marginTop: 8 },
+  loadingText: { color: "#8E8E93", fontSize: 14, marginTop: 8 },
   errorText: {
-    color: "#718096",
+    color: "#8E8E93",
     fontSize: 14,
     textAlign: "center",
     marginHorizontal: 30,
     lineHeight: 20,
   },
   retryBtn: {
-    backgroundColor: "#E53E3E",
+    backgroundColor: "#007AFF",
     paddingHorizontal: 32,
     paddingVertical: 11,
     borderRadius: 22,
     marginTop: 4,
   },
-  retryBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  retryBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
 
   // Page header
   pageHeader: { marginTop: 50, marginBottom: 16 },
-  pageTitle: { fontSize: 22, fontWeight: "800", color: "#1A202C" },
-  pageSubtitle: { fontSize: 13, color: "#718096", marginTop: 3 },
+  pageTitle: { fontSize: 22, fontWeight: "800", color: "#111111" },
+  pageSubtitle: { fontSize: 13, color: "#8E8E93", marginTop: 3 },
 
   // Card
   card: {
@@ -533,12 +530,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: "#1A202C" },
-  cardSubtitle: { fontSize: 12, color: "#718096", marginTop: 2 },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: "#111111" },
+  cardSubtitle: { fontSize: 12, color: "#8E8E93", marginTop: 2 },
 
   // Subsection (Electricity theft)
   subsectionCard: {
-    backgroundColor: "#F7F8FC",
+    backgroundColor: "#F2F2F7",
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
@@ -568,7 +565,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  primaryBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
 
   // Tip cards (Energy saving)
   tipCard: {
@@ -590,14 +587,14 @@ const styles = StyleSheet.create({
   tipTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#1A202C",
+    color: "#111111",
     marginBottom: 3,
   },
   tipBody: { fontSize: 12, color: "#4A5568", lineHeight: 17 },
 
   // Inner box (Safety guidelines)
   innerBox: {
-    backgroundColor: "#F7F8FC",
+    backgroundColor: "#F2F2F7",
     borderRadius: 10,
     padding: 13,
     marginBottom: 10,
@@ -605,7 +602,7 @@ const styles = StyleSheet.create({
   innerBoxTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#1A202C",
+    color: "#111111",
     marginBottom: 10,
   },
 
@@ -626,7 +623,7 @@ const styles = StyleSheet.create({
   },
   tamperBadgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
   tamperText: { flex: 1, fontSize: 12, color: "#4A5568", lineHeight: 18 },
-  tamperLabel: { fontWeight: "700", color: "#1A202C" },
+  tamperLabel: { fontWeight: "700", color: "#111111" },
 
   // Suspicious activity steps
   stepRow: {

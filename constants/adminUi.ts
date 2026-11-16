@@ -1,14 +1,21 @@
 // constants/adminUi.ts
 // Admin screens (Dashboard / Risks / ConsumerProfile) ke shared colors aur helpers.
 
+import { palette as brand } from "../theme";
+
 export const palette = {
-  primary: "#0B3C5D",
-  accent: "#007AFF", // normal consumption (blue line)
-  danger: "#FF3B30", // theft (red line)
-  warning: "#FF9500",
-  success: "#34C759",
-  teal: "#1CA7A6",
-  white: "#FFFFFF",
+  primary: brand.navy,
+  ink: brand.black,
+  accent: brand.blue,
+  secondary: "#32ADE6",
+  danger: brand.error,
+  warning: brand.warning,
+  success: brand.success,
+  teal: brand.teal,
+  info: brand.info,
+  white: brand.white,
+  page: brand.grey,
+  line: brand.soft,
 };
 
 export const riskColor = (level: string): string => {
@@ -29,7 +36,7 @@ const RESOLVED = ["resolved", "closed", "completed", "done"];
 
 export const caseStatusColor = (status: string): string => {
   const s = (status || "").toLowerCase();
-  if (RESOLVED.includes(s)) return palette.teal;
+  if (RESOLVED.includes(s)) return palette.success;
   if (s.includes("progress") || s.includes("review") || s.includes("investigat") || s.includes("pending"))
     return palette.warning;
   return palette.danger; // Open / Escalated / unknown

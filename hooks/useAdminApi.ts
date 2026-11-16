@@ -1,16 +1,15 @@
 // hooks/useAdminApi.ts
 // FastAPI backend se data lene ke liye hooks + response types.
-//
-// .env (Expo) mai set karo:
-//   EXPO_PUBLIC_API_URL=http://192.168.1.10:8000      (LAN IP / deployed URL)
-//   Android emulator => http://10.0.2.2:8000 | iOS simulator => http://localhost:8000
+// Base URL: constants/api.ts (EXPO_PUBLIC_API_URL, then the deployed admin API).
 import { onAuthStateChanged } from "firebase/auth";
+import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { auth } from "../firebaseConfig";
+import { API_BASE_URL } from "../constants/api";
+import { auth, db } from "../firebaseConfig";
+import { ApiError as ClientApiError, apiFetch, getAuthToken } from "./apiClient";
+import { onSessionReset } from "./authSession";
 
-export const API_BASE_URL = (
-  process.env.EXPO_PUBLIC_API_URL ?? "http://10.0.2.2:8000"
-).replace(/\/+$/, "");
+export { API_BASE_URL };
 
 // ─────────────────────────────────────────────────────────────
 // TYPES  (backend schemas.py se match karte hain)
@@ -91,40 +90,7 @@ export interface ConsumerProfile extends ConsumerSummary {
 }
 
 // ─────────────────────────────────────────────────────────────
-// AUTH TOKEN
-// ─────────────────────────────────────────────────────────────
-const getIdToken = (): Promise<string | null> => {
-  if (auth.currentUser) {
-    return auth.currentUser.getIdToken().catch(() => null);
-  }
-  // App start par Firebase session restore hone tak intezar (max 5s)
-  return new Promise((resolve) => {
-    let done = false;
-    let unsub: (() => void) | undefined;
-    const finish = (token: string | null) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      unsub?.();
-      resolve(token);
-    };
-    const timer = setTimeout(() => finish(null), 5000);
-    unsub = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        finish(null);
-        return;
-      }
-      user
-        .getIdToken()
-        .then(finish)
-        .catch(() => finish(null));
-    });
-    if (done) unsub?.();
-  });
-};
-
-// ─────────────────────────────────────────────────────────────
-// FETCH HELPER
+// FETCH HELPERS — thin wrappers over hooks/apiClient.ts (one auth/timeout path)
 // ─────────────────────────────────────────────────────────────
 type Params = Record<string, string | number | null | undefined>;
 
@@ -136,63 +102,35 @@ export class ApiError extends Error {
   }
 }
 
+const rethrow = (e: unknown): never => {
+  if (e instanceof ClientApiError) throw new ApiError(e.status ?? 0, e.message);
+  throw e;
+};
+
 export async function apiGet<T>(path: string, params?: Params): Promise<T> {
-  const token = await getIdToken();
   const qs = params
     ? Object.entries(params)
         .filter(([, v]) => v !== undefined && v !== null && v !== "")
         .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
         .join("&")
     : "";
-  const url = `${API_BASE_URL}${path}${qs ? `?${qs}` : ""}`;
-
-  const res = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-
-  if (!res.ok) {
-    let detail = res.statusText || "Request failed";
-    try {
-      const body = await res.json();
-      if (body?.detail) {
-        detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
-      }
-    } catch {
-      // body JSON nahi tha
-    }
-    throw new ApiError(res.status, detail);
+  try {
+    return await apiFetch<T>(`${path}${qs ? `?${qs}` : ""}`);
+  } catch (e) {
+    return rethrow(e);
   }
-  return (await res.json()) as T;
 }
 
-// ─────────────────────────────────────────────────────────────
-// POST helper (notifications read/unread ke liye)
-// ─────────────────────────────────────────────────────────────
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const token = await getIdToken();
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let detail = res.statusText || "Request failed";
-    try {
-      const j = await res.json();
-      if (j?.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
-    } catch {
-      // body JSON nahi tha
-    }
-    throw new ApiError(res.status, detail);
+  try {
+    return await apiFetch<T>(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    return rethrow(e);
   }
-  return (await res.json()) as T;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -241,6 +179,19 @@ export function useApi<T>(path: string | null, params?: Params) {
     load("initial");
   }, [load]);
 
+  // Account switch => drop the previous account's data and load again.
+  useEffect(() => {
+    let lastUid = auth.currentUser?.uid ?? null;
+    return onAuthStateChanged(auth, (user) => {
+      const uid = user?.uid ?? null;
+      if (uid === lastUid) return;
+      lastUid = uid;
+      setData(null);
+      setError(null);
+      if (uid) load("initial");
+    });
+  }, [load]);
+
   // unmount ke baad aane wale responses ignore karo
   useEffect(() => {
     return () => {
@@ -281,13 +232,18 @@ const emitLive = () => {
 
 const connectLive = async (gen: number) => {
   if (!liveRunning || gen !== liveGen) return;
-  const token = await getIdToken();
+  const token = await getAuthToken();
   if (!liveRunning || gen !== liveGen) return;
+  if (!token) {
+    // not signed in (yet): try again shortly instead of opening an unauthenticated socket
+    liveRetryTimer = setTimeout(() => connectLive(gen), 5000);
+    return;
+  }
 
   const wsUrl =
     API_BASE_URL.replace(/^http/, "ws") +
     "/ws/updates" +
-    (token ? `?token=${encodeURIComponent(token)}` : "");
+    `?token=${encodeURIComponent(token)}`;
 
   const ws = new WebSocket(wsUrl);
   liveSocket = ws;
@@ -391,9 +347,11 @@ interface NState {
   error: string | null;
 }
 
-let nState: NState = { items: [], unread: 0, loaded: false, error: null };
+const EMPTY_N: NState = { items: [], unread: 0, loaded: false, error: null };
+let nState: NState = EMPTY_N;
 const nSubs = new Set<() => void>();
 let nUnsubLive: (() => void) | null = null;
+let nUnsubCases: (() => void) | null = null;
 let nFetching = false;
 let nQueued = false;
 
@@ -402,7 +360,20 @@ const setNState = (patch: Partial<NState>) => {
   nSubs.forEach((fn) => fn());
 };
 
+// Logout / account switch: forget the previous admin's notifications and any
+// in-flight fetch flag, and restart the socket with the new account's token.
+onSessionReset(() => {
+  nFetching = false;
+  nQueued = false;
+  setNState({ ...EMPTY_N });
+  if (liveRunning) {
+    stopLive();
+    if (liveListeners.size > 0) startLive();
+  }
+});
+
 export async function refreshNotifications(): Promise<void> {
+  if (!auth.currentUser) return;
   if (nFetching) {
     nQueued = true; // fetch ke dauran naya event aaya => ek aur baar fetch
     return;
@@ -454,15 +425,28 @@ export function useNotifications() {
     nSubs.add(fn);
     if (nSubs.size === 1) {
       nUnsubLive = subscribeLive(refreshNotifications);
+      const newestCase = query(collection(db, "cases"), orderBy("updatedAt", "desc"), limit(1));
+      nUnsubCases = onSnapshot(
+        newestCase,
+        () => {
+          refreshNotifications();
+        },
+        () => {
+          nUnsubCases?.();
+          nUnsubCases = null;
+        },
+      );
       refreshNotifications();
     } else if (!nState.loaded) {
       refreshNotifications();
     }
     return () => {
       nSubs.delete(fn);
-      if (nSubs.size === 0 && nUnsubLive) {
-        nUnsubLive();
+      if (nSubs.size === 0) {
+        nUnsubLive?.();
         nUnsubLive = null;
+        nUnsubCases?.();
+        nUnsubCases = null;
       }
     };
   }, []);

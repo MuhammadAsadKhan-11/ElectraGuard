@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Linking,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -19,6 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { StackBar } from "../../../components/AppChrome";
 import { db } from "../../../firebaseConfig";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { seedSupportData } from "../../../seedsupport";
@@ -54,7 +54,7 @@ const FAQAccordion: React.FC<{ item: FAQItem }> = ({ item }) => {
           <Ionicons
             name={(item.icon as IoniconsName) || "help-circle-outline"}
             size={16}
-            color="#0B3C5D"
+            color="#111111"
             style={{ marginTop: 1 }}
           />
           <Text style={styles.faqQuestion}>{item.question}</Text>
@@ -62,7 +62,7 @@ const FAQAccordion: React.FC<{ item: FAQItem }> = ({ item }) => {
         <Ionicons
           name={open ? "chevron-up" : "chevron-down"}
           size={16}
-          color="#9CA3AF"
+          color="#8E8E93"
         />
       </TouchableOpacity>
       {open && (
@@ -87,14 +87,14 @@ const ArticleCard: React.FC<{ article: KBArticle }> = ({ article }) => (
       <Ionicons
         name={(article.icon as IoniconsName) || "document-outline"}
         size={18}
-        color="#0B3C5D"
+        color="#111111"
       />
     </View>
     <View style={{ flex: 1 }}>
       <Text style={styles.articleLabel}>{article.label}</Text>
       <Text style={styles.articleCategory}>{article.category}</Text>
     </View>
-    <Ionicons name="open-outline" size={15} color="#9CA3AF" />
+    <Ionicons name="open-outline" size={15} color="#8E8E93" />
   </TouchableOpacity>
 );
 
@@ -184,7 +184,7 @@ export default function SupportScreen(): React.ReactElement {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#0B3C5D" />
+        <ActivityIndicator size="large" color="#111111" />
         <Text style={styles.loadingText}>Loading support...</Text>
       </View>
     );
@@ -205,8 +205,13 @@ export default function SupportScreen(): React.ReactElement {
   const { faqs, articles, contact } = data;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StackBar
+        title="Help and support"
+        subtitle="Answers, contacts, and energy tips"
+        onBack={() => router.back()}
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -214,24 +219,10 @@ export default function SupportScreen(): React.ReactElement {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#0B3C5D"
+            tintColor="#007AFF"
           />
         }
       >
-        {/* ── Header ── */}
-        <View style={styles.headerCard}>
-          <TouchableOpacity
-            style={styles.backRow}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={18} color="#0B3C5D" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Help & Support</Text>
-          <Text style={styles.headerSubtitle}>
-            Get answers to your questions and learn about energy conservation
-          </Text>
-        </View>
 
         {/* ── Contact Options ── */}
         <View style={styles.contactRow}>
@@ -273,7 +264,7 @@ export default function SupportScreen(): React.ReactElement {
             <View
               style={[styles.contactIconBox, { backgroundColor: "#F0FFF4" }]}
             >
-              <Ionicons name="help-circle-outline" size={22} color="#16A34A" />
+              <Ionicons name="help-circle-outline" size={22} color="#34C759" />
             </View>
             <Text style={styles.contactLabel}>
               {contact?.helplineLabel || "Helpline"}
@@ -314,7 +305,7 @@ export default function SupportScreen(): React.ReactElement {
           <Ionicons
             name={showKB ? "chevron-up" : "chevron-down"}
             size={18}
-            color="#9CA3AF"
+            color="#8E8E93"
           />
         </TouchableOpacity>
 
@@ -347,7 +338,7 @@ export default function SupportScreen(): React.ReactElement {
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -355,25 +346,25 @@ export default function SupportScreen(): React.ReactElement {
 // STYLES
 // ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 20 },
+  safeArea: { flex: 1, backgroundColor: "#F2F2F7" },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 },
 
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F2F2F7",
     gap: 12,
   },
-  loadingText: { color: "#718096", fontSize: 14 },
-  errorText: { color: "#718096", fontSize: 14, textAlign: "center" },
+  loadingText: { color: "#8E8E93", fontSize: 14 },
+  errorText: { color: "#8E8E93", fontSize: 14, textAlign: "center" },
   retryBtn: {
-    backgroundColor: "#0B3C5D",
+    backgroundColor: "#007AFF",
     paddingHorizontal: 28,
     paddingVertical: 10,
     borderRadius: 20,
   },
-  retryText: { color: "#fff", fontWeight: "700" },
+  retryText: { color: "#FFFFFF", fontWeight: "700" },
 
   // Header
   headerCard: {
@@ -392,7 +383,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#E8F1FF",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 12,
@@ -400,10 +391,10 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#0B3C5D",
+    color: "#111111",
     marginBottom: 4,
   },
-  headerSubtitle: { fontSize: 13, color: "#6B7280", lineHeight: 19 },
+  headerSubtitle: { fontSize: 13, color: "#8E8E93", lineHeight: 19 },
 
   // Contact options
   contactRow: { flexDirection: "row", gap: 12, marginBottom: 12 },
@@ -429,10 +420,10 @@ const styles = StyleSheet.create({
   contactLabel: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#1A202C",
+    color: "#111111",
     marginBottom: 2,
   },
-  contactSub: { fontSize: 11, color: "#9CA3AF", marginBottom: 6 },
+  contactSub: { fontSize: 11, color: "#8E8E93", marginBottom: 6 },
   onlineBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -447,13 +438,13 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#16A34A",
+    backgroundColor: "#34C759",
   },
-  onlineBadgeText: { fontSize: 10, color: "#16A34A", fontWeight: "600" },
+  onlineBadgeText: { fontSize: 10, color: "#34C759", fontWeight: "600" },
   helplineNumber: {
     fontSize: 16,
     fontWeight: "800",
-    color: "#16A34A",
+    color: "#34C759",
     marginTop: 2,
   },
 
@@ -500,19 +491,19 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#E8F1FF",
     justifyContent: "center",
     alignItems: "center",
   },
   articleLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#1A202C",
+    color: "#111111",
     marginBottom: 2,
   },
   articleCategory: {
     fontSize: 11,
-    color: "#9CA3AF",
+    color: "#8E8E93",
     backgroundColor: "#F1F5F9",
     paddingHorizontal: 7,
     paddingVertical: 2,
@@ -524,7 +515,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#1A202C",
+    color: "#111111",
     marginBottom: 10,
     marginLeft: 2,
   },
@@ -558,14 +549,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: "600",
-    color: "#1A202C",
+    color: "#111111",
     lineHeight: 19,
   },
   faqAnswer: {
     paddingHorizontal: 14,
     paddingBottom: 14,
     paddingTop: 2,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F2F2F7",
   },
   faqAnswerText: {
     fontSize: 12,
@@ -575,7 +566,7 @@ const styles = StyleSheet.create({
 
   // Chat hint
   chatBotHint: {
-    backgroundColor: "#0B3C5D",
+    backgroundColor: "#007AFF",
     borderRadius: 12,
     paddingVertical: 14,
     flexDirection: "row",
@@ -583,11 +574,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     marginTop: 4,
-    shadowColor: "#0B3C5D",
+    shadowColor: "#007AFF",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 4,
   },
-  chatBotHintText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  chatBotHintText: { color: "#111111", fontWeight: "700", fontSize: 14 },
 });

@@ -15,6 +15,7 @@ import { isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, I18nManager, Linking, View } from 'react-native';
 import { auth } from '../firebaseConfig';
+import { AppSettingsProvider } from '../hooks/AppSettingContext';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -67,16 +68,17 @@ export default function RootLayout() {
   if (!fontsLoaded) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#0B3C5D" />
+        <ActivityIndicator size="large" color="#111111" />
       </View>
     );
   }
 
   return (
-    <>
+    <AppSettingsProvider>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="src/Admin" />
+        <Stack.Screen name="src/Consumer" />
         <Stack.Screen name="src/(tabs)" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         <Stack.Screen name="src/screens/SplashScreen" />
@@ -85,8 +87,8 @@ export default function RootLayout() {
         <Stack.Screen name="src/screens/ForgotPasswordScreen" />
         <Stack.Screen name="src/screens/LoginOTPScreen" />
         <Stack.Screen name="src/screens/ResetOTPVerifyScreen" />
-        {/* <Stack.Screen name="screens/ResetPasswordScreen" />  ← YEH ADD KARO */}
+        <Stack.Screen name="src/screens/ResetPasswordScreen" />
       </Stack>
-    </>
+    </AppSettingsProvider>
   );
 }

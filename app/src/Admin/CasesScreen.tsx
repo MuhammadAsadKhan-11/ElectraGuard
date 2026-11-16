@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -12,6 +11,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { HeroButton, TabHero } from "../../../components/AppChrome";
+import { useAdminOverlay } from "../../../components/AdminOverlay";
+import NotificationBell from "../../../components/NotificationBell";
 import { Colors, getCaseStatusColor, getRiskColor } from "../../../constants/Colors";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { getStrings } from "../../../constants/caseScreensStrings";
@@ -147,6 +149,7 @@ const CaseCard = ({
 // ─── Main Screen ──────────────────────────────────────────────
 export default function CasesScreen() {
   const router = useRouter();
+  const overlay = useAdminOverlay();
   const { colors, language } = useAppSettings();
   const S = getStrings(language).cases;
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
@@ -168,28 +171,23 @@ export default function CasesScreen() {
   const tabFilters: CaseStatus[] = ["Open", "In Progress", "Closed"];
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+    <View style={[styles.safe, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <TabHero
+        title={S.title}
+        subtitle={S.subtitle}
+        right={
+          <View style={styles.heroActions}>
+            <NotificationBell tintColor="#0B3C5D" style={styles.heroBell} />
+            <HeroButton name="add" onPress={() => overlay?.openCreate()} />
+          </View>
+        }
+      />
       <ScrollView
+        contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={!!refreshing} onRefresh={pullRefresh} />}
       >
-        {/* Header */}
-        <View style={[styles.header, { backgroundColor: colors.card }]}>
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>{S.title}</Text>
-            <Text style={[styles.headerSub, { color: colors.subText }]}>{S.subtitle}</Text>
-          </View>
-
-          {/* + Button — opens Create Case */}
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={() => router.push("/src/Admin/createCaseScreen" as any)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.addBtnText}>+</Text>
-          </TouchableOpacity>
-        </View>
 
         {loading ? (
           <View style={styles.loadingBox}>
@@ -264,13 +262,20 @@ export default function CasesScreen() {
 
         <View style={{ height: 20 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
+  scroll: { paddingTop: 16 },
+  heroActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  heroBell: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 6,
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -299,7 +304,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  addBtnText: { fontSize: 24, color: "#fff", lineHeight: 30, fontWeight: "500" },
+  addBtnText: { fontSize: 24, color: "#FFFFFF", lineHeight: 30, fontWeight: "500" },
   loadingBox: { alignItems: "center", padding: 40, gap: 12 },
   loadingText: { fontSize: 14, color: Colors.textSecondary },
   overviewCard: {
@@ -334,7 +339,7 @@ const styles = StyleSheet.create({
   },
   tabBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   tabText: { fontSize: 12, color: Colors.textSecondary, fontWeight: "500" },
-  tabTextActive: { color: "#fff", fontWeight: "600" },
+  tabTextActive: { color: "#FFFFFF", fontWeight: "600" },
   listContainer: { paddingHorizontal: 16, gap: 12 },
   caseCard: {
     backgroundColor: Colors.white,

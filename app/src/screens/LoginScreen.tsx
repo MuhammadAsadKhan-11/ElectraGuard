@@ -1,84 +1,44 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { AuthField, AuthScreen, NAVY } from "../../../components/AuthChrome";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
-} from "firebase/firestore";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
-  ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { auth, db } from "../../../firebaseConfig";
+import { auth } from "../../../firebaseConfig";
+import { ApiError } from "../../../hooks/apiClient";
+import {
+  PortalRole,
+  requestLoginOtp,
+  resetSessionStores,
+  resolveLoginEmail,
+  signOutEverywhere,
+} from "../../../hooks/authSession";
 
-// ── EmailJS Config ─────────────────────────────────────────────────────────────
-const EMAILJS_SERVICE_ID = process.env.EXPO_PUBLIC_EMAILJS_SERVICE_ID!;
-const EMAILJS_PUBLIC_KEY = process.env.EXPO_PUBLIC_EMAILJS_PUBLIC_KEY!;
-const EMAILJS_PRIVATE_KEY = process.env.EXPO_PUBLIC_EMAILJS_PRIVATE_KEY!;
-const EMAILJS_CONSUMER_TEMPLATE_ID = process.env.EXPO_PUBLIC_EMAILJS_CONSUMER_TEMPLATE_ID!;
-const EMAILJS_ADMIN_TEMPLATE_ID = process.env.EXPO_PUBLIC_EMAILJS_ADMIN_TEMPLATE_ID!;
+// Login = Firebase password check, then a backend-issued email OTP (EmailJS).
+// The OTP is generated, stored (hashed) and verified on the server; a device
+// that verified within the last 7 days is trusted and skips the code.
 
-// ── 1-week verification window (in milliseconds) ──────────────────────────────
-const VERIFICATION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-
-// ─── EmailJS sender ────────────────────────────────────────────────────────────
-const sendEmail = async (
-  toEmail: string,
-  templateId: string,
-  templateParams: Record<string, string>,
-): Promise<void> => {
-  const payload = {
-    service_id: EMAILJS_SERVICE_ID,
-    template_id: templateId,
-    user_id: EMAILJS_PUBLIC_KEY,
-    accessToken: EMAILJS_PRIVATE_KEY,
-    template_params: { to_email: toEmail, ...templateParams },
-  };
-
-  const response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const responseText = await response.text();
-  console.log("EmailJS response:", response.status, responseText);
-
-  if (!response.ok)
-    throw new Error(`EmailJS ${response.status}: ${responseText}`);
-};
-
-// ─── Generate 6-digit OTP ──────────────────────────────────────────────────────
-const generateOTP = (): string =>
-  Math.floor(100000 + Math.random() * 900000).toString();
-
-// ─── FIX 1: Check 1-week verified window (device clock safe) ──────────────────
-const isWithinVerifiedWindow = (docData: Record<string, any>): boolean => {
-  if (!docData.isVerified) return false;
-  if (!docData.lastVerifiedAt) return false;
-
-  const now = Date.now();
-  const lastVerifiedAt = docData.lastVerifiedAt;
-
-  // If it's 0 → consider it invalid, send OTP
-  if (lastVerifiedAt <= 0) return false;
-  if (lastVerifiedAt > now + 60_000) return false; // 1 min tolerance
-
-  const elapsed = now - lastVerifiedAt;
-  return elapsed < VERIFICATION_WINDOW_MS;
+const authErrorMessage = (code: string | undefined, fallback?: string) => {
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+    case "auth/invalid-email":
+      return "Invalid email or password.";
+    case "auth/too-many-requests":
+      return "Too many attempts. Please wait a few minutes and try again.";
+    case "auth/network-request-failed":
+      return "Network error. Check your internet connection.";
+    default:
+      return fallback || "Authentication failed.";
+  }
 };
 
 export default function LoginScreen() {
@@ -87,401 +47,182 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (unsubscribeRef.current) unsubscribeRef.current();
-    };
-  }, []);
+  const [stage, setStage] = useState("");
 
   // ─── Main login handler ──────────────────────────────────────────────────────
   const handleLogin = async () => {
-    if (!emailOrId || !password) {
+    if (!emailOrId.trim() || !password) {
       Alert.alert("Error", "Please fill in all fields.");
       return;
     }
+    const role: PortalRole = activeTab === "Admin" ? "admin" : "consumer";
     setLoading(true);
 
     try {
-      // ════════════════════════════════════════════════════════════════════════
-      // ADMIN FLOW
-      // ════════════════════════════════════════════════════════════════════════
-      if (activeTab === "Admin") {
-        // FIX 2: Keep admin email as-is, just trim it
-        const adminEmail = emailOrId.trim();
+      // Drop whatever the previous account left behind (cached lists, listeners, session).
+      resetSessionStores();
+      if (auth.currentUser) await signOutEverywhere();
 
-        // 1. Firebase Auth — sign in to validate password
-        let userCredential;
+      // 1. Consumer ID -> email (server side; consumers are not publicly readable)
+      let email = emailOrId.trim();
+      if (role === "consumer" && !email.includes("@")) {
+        setStage("Looking up your account…");
         try {
-          userCredential = await signInWithEmailAndPassword(
-            auth,
-            adminEmail,
-            password,
-          );
-        } catch (authError: any) {
-          if (
-            authError.code === "auth/invalid-credential" ||
-            authError.code === "auth/wrong-password" ||
-            authError.code === "auth/user-not-found"
-          ) {
-            Alert.alert("Login Failed", "Invalid email or password.");
-          } else {
-            Alert.alert(
-              "Login Failed",
-              authError.message || "Authentication failed.",
-            );
-          }
-          setLoading(false);
+          email = await resolveLoginEmail(email);
+        } catch (e: any) {
+          Alert.alert("Error", e?.message || "No consumer found with this ID.");
           return;
         }
-
-        // 2. Admins collection check
-        const adminSnap = await getDocs(
-          query(
-            collection(db, "admins"),
-            where("uid", "==", userCredential.user.uid),
-          ),
-        );
-
-        if (adminSnap.empty) {
-          Alert.alert("Access Denied", "You are not authorized as an Admin.");
-          await auth.signOut();
-          setLoading(false);
-          return;
-        }
-
-        const adminDocId = adminSnap.docs[0].id;
-        const adminDocData = adminSnap.docs[0].data();
-
-        // ── Check 1-week window ───────────────────────────────────────────────
-        if (isWithinVerifiedWindow(adminDocData)) {
-          console.log("Admin already verified within 1 week, skipping OTP.");
-          router.replace("/src/Admin" as any);
-          setLoading(false);
-          return;
-        }
-
-        // 3. Not within window → sign out, then send OTP
-        await auth.signOut();
-
-        const otp = generateOTP();
-        const otpExpiresAt = Date.now() + 10 * 60 * 1000;
-
-        await updateDoc(doc(db, "admins", adminDocId), {
-          loginOtp: otp,
-          loginOtpExpiresAt: otpExpiresAt,
-          isVerified: false,
-          lastVerifiedAt: null,
-        });
-
-        // 4. Send OTP email
-        try {
-          await sendEmail(adminEmail, EMAILJS_ADMIN_TEMPLATE_ID, {
-            otp_code: otp,
-          });
-        } catch (emailError: any) {
-          Alert.alert(
-            "Email Error",
-            emailError.message || "Failed to send OTP email.",
-          );
-          setLoading(false);
-          return;
-        }
-
-        Alert.alert(
-          "OTP Sent",
-          `A 6-digit OTP has been sent to ${adminEmail}. It expires in 10 minutes.`,
-          [{ text: "OK" }],
-        );
-
-        // 5. Navigate to OTP screen
-        router.push({
-          pathname: "/src/screens/LoginOTPScreen",
-          params: { email: adminEmail, password, role: "Admin", adminDocId },
-        });
-
-        // ════════════════════════════════════════════════════════════════════════
-        // CONSUMER FLOW
-        // ════════════════════════════════════════════════════════════════════════
-      } else {
-        // FIX 3: Keep email as-is — just trim it, don't convert to lowercase
-        let loginEmail = emailOrId.trim();
-        let consumerDocId = "";
-        let consumerData: Record<string, any> = {};
-
-        // 1. Resolve Consumer ID → email if needed
-        if (!emailOrId.includes("@")) {
-          //login as consumer id
-          const idSnap = await getDocs(
-            query(
-              collection(db, "consumers"),
-              where("consumerId", "==", emailOrId.trim()),
-            ),
-          );
-          if (idSnap.empty) {
-            Alert.alert("Error", "No consumer found with this ID.");
-            setLoading(false);
-            return;
-          }
-          // FIX 4: Take email from Firestore as-is — don't convert to lowercase
-          loginEmail = idSnap.docs[0].data().email?.trim();
-          consumerDocId = idSnap.docs[0].id;
-          consumerData = idSnap.docs[0].data();
-
-          if (!loginEmail) {
-            Alert.alert(
-              "Error",
-              "Consumer email not found. Please contact support.",
-            );
-            setLoading(false);
-            return;
-          }
-        } else {
-          //ogin with email — for case-insensitive Firestore query, first try exact match
-          let emailSnap = await getDocs(
-            query(
-              collection(db, "consumers"),
-              where("email", "==", loginEmail),
-            ),
-          );
-
-          // FIX 5: If exact match not found, then try lowercase match (for legacy data that may be inconsistent)
-          if (emailSnap.empty) {
-            emailSnap = await getDocs(
-              query(
-                collection(db, "consumers"),
-                where("email", "==", loginEmail.toLowerCase()),
-              ),
-            );
-          }
-
-          if (emailSnap.empty) {
-            Alert.alert("Error", "Consumer record not found.");
-            setLoading(false);
-            return;
-          }
-
-          consumerDocId = emailSnap.docs[0].id;
-          consumerData = emailSnap.docs[0].data();
-          //FIX 6: Use the exact email that is registered in Firebase Auth
-          loginEmail = consumerData.email?.trim();
-        }
-
-        // 2. Firebase Auth — sign in to validate password
-        try {
-          await signInWithEmailAndPassword(auth, loginEmail, password);
-        } catch (authError: any) {
-          console.log("Auth error code:", authError.code);
-          console.log("Trying email:", loginEmail);
-          if (
-            authError.code === "auth/invalid-credential" ||
-            authError.code === "auth/wrong-password" ||
-            authError.code === "auth/user-not-found"
-          ) {
-            Alert.alert("Login Failed", "Invalid email or password.");
-          } else {
-            Alert.alert(
-              "Login Failed",
-              authError.message || "Authentication failed.",
-            );
-          }
-          setLoading(false);
-          return;
-        }
-
-        // ── Check 1-week window ───────────────────────────────────────────────
-        if (isWithinVerifiedWindow(consumerData)) {
-          console.log("Consumer already verified within 1 week, skipping OTP.");
-          router.replace("/src/Consumer" as any);
-          setLoading(false);
-          return;
-        }
-
-        // 3. Not within window → sign out, then send OTP
-        await auth.signOut();
-
-        const otp = generateOTP();
-        const otpExpiresAt = Date.now() + 10 * 60 * 1000;
-
-        await updateDoc(doc(db, "consumers", consumerDocId), {
-          loginOtp: otp,
-          loginOtpExpiresAt: otpExpiresAt,
-          isVerified: false,
-          lastVerifiedAt: null,
-        });
-
-        // 4. Send OTP email
-        try {
-          await sendEmail(loginEmail, EMAILJS_CONSUMER_TEMPLATE_ID, {
-            otp_code: otp,
-          });
-        } catch (emailError: any) {
-          Alert.alert(
-            "Email Error",
-            emailError.message || "Failed to send OTP email.",
-          );
-          setLoading(false);
-          return;
-        }
-
-        Alert.alert(
-          "OTP Sent",
-          `A 6-digit OTP has been sent to ${loginEmail}. It expires in 10 minutes.`,
-          [{ text: "OK" }],
-        );
-
-        // 5. Navigate to OTP screen
-        router.push({
-          pathname: "/src/screens/LoginOTPScreen",
-          params: {
-            email: loginEmail,
-            password,
-            role: "Consumer",
-            consumerDocId,
-          },
-        });
       }
+
+      // 2. Password check (Firebase Auth)
+      setStage("Signing in…");
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (authError: any) {
+        Alert.alert("Login Failed", authErrorMessage(authError?.code, authError?.message));
+        return;
+      }
+
+      // 3. Email OTP (backend). If it cannot be sent, the sign-in is cancelled.
+      setStage("Sending verification code…");
+      let otp;
+      try {
+        otp = await requestLoginOtp(role);
+      } catch (e: any) {
+        await signOutEverywhere();
+        const denied = e instanceof ApiError && e.status === 403;
+        Alert.alert(
+          denied ? "Access Denied" : "Verification Error",
+          e?.message || "Could not send the verification code. Please try again.",
+        );
+        return;
+      }
+
+      if (!otp.required) {
+        router.replace((role === "admin" ? "/src/Admin" : "/src/Consumer") as any);
+        return;
+      }
+
+      router.push({
+        pathname: "/src/screens/LoginOTPScreen",
+        params: {
+          email: otp.maskedEmail || email,
+          role,
+          expiresIn: String(otp.expiresIn ?? 600),
+          resendIn: String(otp.resendIn ?? 60),
+        },
+      });
     } catch (error: any) {
       Alert.alert("Error", error?.message || "Something went wrong.");
     } finally {
       setLoading(false);
+      setStage("");
     }
   };
 
-  // ─── UI ───────────────────────────────────────────────────────────────────────
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      keyboardShouldPersistTaps="handled"
-    >
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <AuthScreen>
+      <Text style={styles.title}>Sign in</Text>
+      <Text style={styles.subtitle}>Choose a portal to continue</Text>
 
-      <Image
-        source={require("../../../assets/logo.png")}
-        style={styles.logo}
-        resizeMode="contain"
-      />
-      <Text style={styles.brandName}>Electra Guard</Text>
-      <Text style={styles.subtitle}>
-        Utility Theft Detection & Analytics System
-      </Text>
-
-      {/* Tab switcher */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
-          style={[
-            styles.tabButton,
-            activeTab === "Consumer" && styles.tabButtonActive,
-          ]}
+          style={[styles.tabButton, activeTab === "Consumer" && styles.tabButtonActive]}
           onPress={() => {
             setActiveTab("Consumer");
             setEmailOrId("");
             setPassword("");
           }}
         >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "Consumer" && styles.tabTextActive,
-            ]}
-          >
+          <Ionicons
+            name="person-outline"
+            size={16}
+            color="#111111"
+          />
+          <Text style={[styles.tabText, activeTab === "Consumer" && styles.tabTextActive]}>
             Consumer
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[
-            styles.tabButton,
-            activeTab === "Admin" && styles.tabButtonActive,
-          ]}
+          style={[styles.tabButton, activeTab === "Admin" && styles.tabButtonActive]}
           onPress={() => {
             setActiveTab("Admin");
             setEmailOrId("");
             setPassword("");
           }}
         >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "Admin" && styles.tabTextActive,
-            ]}
-          >
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={16}
+            color="#111111"
+          />
+          <Text style={[styles.tabText, activeTab === "Admin" && styles.tabTextActive]}>
             Admin
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Email / ID input */}
-      <TextInput
-        style={styles.input}
+      <AuthField
+        icon={activeTab === "Admin" ? "mail-outline" : "id-card-outline"}
         placeholder={
-          activeTab === "Admin"
-            ? "Enter Admin Email"
-            : "Enter your Consumer ID or Email"
+          activeTab === "Admin" ? "Admin email" : "Consumer ID or email"
         }
-        placeholderTextColor="#9CA3AF"
         value={emailOrId}
         onChangeText={setEmailOrId}
         keyboardType="email-address"
         autoCapitalize="none"
+        autoCorrect={false}
       />
 
-      {/* Password input */}
-      <View style={styles.passwordContainer}>
-        <TextInput
-          style={styles.passwordInput}
-          placeholder="Enter your password"
-          placeholderTextColor="#9CA3AF"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={!showPassword}
-        />
-        <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-          <Ionicons
-            name={showPassword ? "eye-off-outline" : "eye-outline"}
-            size={20}
-            color="#6B7280"
-          />
-        </TouchableOpacity>
-      </View>
+      <AuthField
+        icon="lock-closed-outline"
+        placeholder="Password"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry={!showPassword}
+        autoCapitalize="none"
+        trailing={
+          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+            <Ionicons
+              name={showPassword ? "eye-off-outline" : "eye-outline"}
+              size={20}
+              color="#8E8E93"
+            />
+          </TouchableOpacity>
+        }
+      />
 
-      {/* OTP notice */}
       <View style={styles.otpNotice}>
         <Ionicons
-          name={
-            activeTab === "Admin" ? "shield-checkmark-outline" : "mail-outline"
-          }
-          size={14}
-          color="#0B3C5D"
+          name={activeTab === "Admin" ? "shield-checkmark-outline" : "mail-outline"}
+          size={16}
+          color="#111111"
         />
         <Text style={styles.otpNoticeText}>
-          A 6-digit OTP will be sent to your email for verification (once per
-          week).
+          A 6-digit code is emailed to confirm it is you. This device is then trusted for 7 days.
         </Text>
       </View>
 
-      {/* Forgot password */}
       <TouchableOpacity
         style={styles.forgotContainer}
         onPress={() => router.push("/src/screens/ForgotPasswordScreen")}
       >
-        <Text style={styles.forgotText}>Forget Password?</Text>
+        <Text style={styles.forgotText}>Forgot password?</Text>
       </TouchableOpacity>
 
-      {/* Continue button */}
-      <TouchableOpacity
-        style={styles.loginButton}
-        onPress={handleLogin}
-        disabled={loading}
-      >
+      <TouchableOpacity style={styles.loginButton} onPress={handleLogin} disabled={loading}>
         {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
+          <ActivityIndicator color="#111111" />
         ) : (
-          <Text style={styles.loginButtonText}>Continue</Text>
+          <>
+            <Ionicons name="log-in-outline" size={18} color="#111111" />
+            <Text style={styles.loginButtonText}>Continue</Text>
+          </>
         )}
       </TouchableOpacity>
+      {!!stage && <Text style={styles.stageText}>{stage}</Text>}
 
-      {/* Register link — Consumer only */}
       {activeTab === "Consumer" && (
         <Text style={styles.registerText}>
           {"Don't have an account? "}
@@ -489,120 +230,99 @@ export default function LoginScreen() {
             style={styles.registerLink}
             onPress={() => router.push("/src/screens/RegisterScreen")}
           >
-            Register Now
+            Create one
           </Text>
         </Text>
       )}
-    </ScrollView>
+    </AuthScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    paddingHorizontal: 28,
-    paddingTop: 60,
-    paddingBottom: 40,
+  stageText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: -6,
+    marginBottom: 10,
   },
-  logo: { width: 70, height: 70, marginBottom: 12 },
-  brandName: {
+  title: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 22,
-    color: "#1F2933",
-    marginBottom: 4,
+    fontSize: 24,
+    color: "#111111",
   },
   subtitle: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    color: "#6B7280",
-    marginBottom: 24,
-    textAlign: "center",
+    color: "#8E8E93",
+    marginTop: 4,
+    marginBottom: 18,
   },
   tabContainer: {
     flexDirection: "row",
-    backgroundColor: "#F3F4F6",
-    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
     padding: 4,
-    marginBottom: 20,
-    width: "100%",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 10,
-    alignItems: "center",
-    borderRadius: 6,
-  },
-  tabButtonActive: { backgroundColor: "#0B3C5D" },
-  tabText: { fontFamily: "Inter_500Medium", fontSize: 14, color: "#0B3C5D" },
-  tabTextActive: { color: "#FFFFFF" },
-  input: {
-    width: "100%",
-    backgroundColor: "rgba(107, 114, 128, 0.1)",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    color: "#1F2933",
-    marginBottom: 14,
-  },
-  passwordContainer: {
-    width: "100%",
-    backgroundColor: "rgba(107, 114, 128, 0.1)",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
     flexDirection: "row",
+    gap: 6,
+    paddingVertical: 11,
     alignItems: "center",
-    marginBottom: 8,
+    justifyContent: "center",
+    borderRadius: 11,
   },
-  passwordInput: {
-    flex: 1,
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    color: "#1F2933",
-  },
+  tabButtonActive: { backgroundColor: NAVY },
+  tabText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: "#111111" },
+  tabTextActive: { color: "#FFFFFF" },
   otpNotice: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#EFF6FF",
-    borderRadius: 8,
-    padding: 10,
-    width: "100%",
-    marginTop: 8,
-    gap: 6,
+    backgroundColor: "#E8F1FF",
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 2,
+    gap: 8,
   },
   otpNoticeText: {
     fontFamily: "Inter_400Regular",
     fontSize: 12,
-    color: "#0B3C5D",
+    color: "#111111",
     flex: 1,
+    lineHeight: 17,
   },
-  forgotContainer: { alignSelf: "flex-end", marginBottom: 24, marginTop: 8 },
+  forgotContainer: { alignSelf: "flex-end", marginTop: 12, marginBottom: 18 },
   forgotText: {
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Inter_600SemiBold",
     fontSize: 13,
-    color: "#0B3C5D",
+    color: "#111111",
   },
   loginButton: {
     width: "100%",
-    backgroundColor: "#0B3C5D",
-    borderRadius: 8,
+    backgroundColor: NAVY,
+    borderRadius: 14,
     paddingVertical: 15,
     alignItems: "center",
-    marginBottom: 20,
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 18,
   },
   loginButtonText: {
     fontFamily: "Inter_600SemiBold",
-    fontSize: 15,
+    fontSize: 16,
     color: "#FFFFFF",
   },
   registerText: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    color: "#6B7280",
+    color: "#8E8E93",
+    textAlign: "center",
   },
-  registerLink: { color: "#0B3C5D", fontFamily: "Inter_600SemiBold" },
+  registerLink: { color: "#111111", fontFamily: "Inter_600SemiBold" },
 });

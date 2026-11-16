@@ -1,8 +1,10 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { Auth, getAuth } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { Platform } from 'react-native';
 
 const firebaseConfig = {
   apiKey:            process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -17,7 +19,25 @@ const firebaseConfig = {
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-export const auth    = getAuth(app);
+// On Android/iOS plain getAuth() keeps the session in memory only. Use the
+// React Native persistence so a signed-in (and 2FA-verified) session survives
+// an app restart. The web build keeps Firebase's default browser persistence.
+function createAuth(): Auth {
+  if (Platform.OS === 'web') return getAuth(app);
+  try {
+    // getReactNativePersistence only exists in the React Native build of firebase/auth.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const rnAuth = require('firebase/auth');
+    return rnAuth.initializeAuth(app, {
+      persistence: rnAuth.getReactNativePersistence(AsyncStorage),
+    });
+  } catch {
+    // Already initialised (fast refresh) or persistence unavailable.
+    return getAuth(app);
+  }
+}
+
+export const auth    = createAuth();
 export const db      = getFirestore(app);
 export const rtdb    = getDatabase(app);
 export const storage = getStorage(app);

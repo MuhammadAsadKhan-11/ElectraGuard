@@ -17,7 +17,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -26,6 +25,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { PREDICT_ENDPOINT } from "../../../constants/api";
+import { TabHero } from "../../../components/AppChrome";
+import ConsumerBell from "../../../components/ConsumerBell";
 import { auth, db } from "../../../firebaseConfig";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 
@@ -46,6 +48,9 @@ interface ConsumptionRecord {
   avgUnits: number;
   estimatedBill: number;
   riskScore: number;
+  riskLevel?: string;
+  prediction?: string;
+  probability?: number;
   uploadedAt: Date;
 }
 
@@ -54,65 +59,95 @@ interface CSVStats {
   avgUnits: number;
   estimatedBill: number;
   dateRange: string;
-  cleanedRows: number[][]; // NaN-safe 2-D array sent to API
+  days: number;
 }
 
+// What the ML API (electra-api /predict) returns.
 interface PredictionResponse {
   riskScore: number;
   prediction: string;
   probability: number;
-  riskLevel: string;
+  riskLevel: "low" | "medium" | "high" | string;
+  predictionLabel?: number;
+  input?: { rowsAnalyzed: number; columnsFound: number; columnsUsed: number; usedLatestWindow: boolean };
+  anomalies?: {
+    days: number;
+    total: number;
+    mean: number;
+    min: number;
+    max: number;
+    zeroDays: number;
+    lowDays: number;
+    spikeDays: number;
+    notes: string[];
+  };
+  dailyReadings?: { label: string; value: number; flag: string | null }[];
 }
 
-// ─── API URL ─────────────────────────────────────────────────────
-const API_URL = "https://electra-api-2.onrender.com/predict";
+const ML_TIMEOUT_MS = 120000; // Render free tier can need ~1 min to wake up
+const MIN_READINGS = 26; // the trained model uses 26 daily readings
+const NON_FEATURE_COLUMNS = new Set(["cons_no", "consno", "consumer_no", "consumer_id", "consumerid", "id", "flag", "label"]);
 
 // ─── CSV Parser ───────────────────────────────────────────────────
 // CSV Format:
-//   Row 1  → dates as column headers  (01/01/2014, 01/02/2014, …)
+//   Row 1  → dates as column headers  (01/01/2014, 01/02/2014, …)  [optional]
 //   Row 2+ → each row = one consumer's daily unit readings
-//
-// FIX (NaN issue): every cell that is NaN / Infinity / negative
-//   is replaced with 0 before sending to the ML API.
+// Same rules as the ML API: header detected automatically, CONS_NO/FLAG
+// columns ignored, NaN / blank / negative cells counted as 0.
 function parseCSV(content: string): CSVStats {
   const lines = content
-    .trim()
-    .split("\n")
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
     .filter((l) => l.trim());
-  if (lines.length < 2)
-    throw new Error("CSV must have a header row and at least one data row.");
+  if (lines.length === 0) throw new Error("The CSV file is empty.");
 
-  // ── Date range from header ──
-  const dateHeaders = lines[0]
-    .split(",")
-    .map((h) => h.trim())
-    .filter(Boolean);
-  const firstDate = dateHeaders[0] ?? "";
-  const lastDate = dateHeaders[dateHeaders.length - 1] ?? "";
+  const split = (l: string) => l.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+  const isNum = (c: string) => c !== "" && isFinite(Number(c));
+  const first = split(lines[0]);
+  const hasHeader = first.some((c) => c && !isNum(c));
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+  if (dataLines.length === 0)
+    throw new Error("The CSV has a header row but no readings. Add at least one row of daily units.");
 
-  // ── Parse + sanitize every data row ──
-  const cleanedRows: number[][] = [];
-  const positiveValues: number[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",");
-    const row: number[] = cols.map((col) => {
-      const val = parseFloat(col.trim());
-      // NaN / Infinity / negative → 0  (MLPClassifier can't handle NaN)
-      return isFinite(val) && val >= 0 ? val : 0;
-    });
-    cleanedRows.push(row);
-    row.forEach((v) => {
-      if (v > 0) positiveValues.push(v);
+  const skip = new Set<number>();
+  if (hasHeader) {
+    first.forEach((h, i) => {
+      if (NON_FEATURE_COLUMNS.has(h.toLowerCase().replace(/ /g, "_"))) skip.add(i);
     });
   }
+  const dateHeaders = hasHeader ? first.filter((h, i) => h && !skip.has(i)) : [];
 
+  const positiveValues: number[] = [];
+  let cells = 0;
+  let invalid = 0;
+  let minLen = Infinity;
+  for (const line of dataLines) {
+    const cols = split(line).filter((_, i) => !skip.has(i));
+    while (cols.length && cols[cols.length - 1] === "") cols.pop();
+    minLen = Math.min(minLen, cols.length);
+    for (const col of cols) {
+      cells += 1;
+      const val = col === "" ? 0 : Number(col);
+      if (col !== "" && !isFinite(val)) invalid += 1;
+      if (isFinite(val) && val > 0) positiveValues.push(val);
+    }
+  }
+
+  if (cells === 0) throw new Error("No readings were found in the CSV.");
+  if (invalid > cells / 2)
+    throw new Error("Most cells are not numbers. Each row must contain daily kWh readings.");
+  if (minLen < MIN_READINGS)
+    throw new Error(
+      `Each row needs at least ${MIN_READINGS} daily readings for the AI model (found ${minLen}).`,
+    );
   if (positiveValues.length === 0)
     throw new Error("No valid unit data found in CSV.");
 
   const total = positiveValues.reduce((sum, v) => sum + v, 0);
   const avg = total / positiveValues.length;
   const bill = total * 20;
+  const firstDate = dateHeaders[0] ?? "";
+  const lastDate = dateHeaders[dateHeaders.length - 1] ?? "";
 
   return {
     totalUnits: Math.round(total * 10) / 10,
@@ -120,8 +155,57 @@ function parseCSV(content: string): CSVStats {
     estimatedBill: Math.round(bill),
     dateRange:
       firstDate && lastDate ? `${firstDate} – ${lastDate}` : getDateRange(),
-    cleanedRows,
+    days: minLen,
   };
+}
+
+// Calls the ML API. Never trusts the body to be JSON (cold-start proxies return HTML).
+async function runPrediction(csv: string): Promise<PredictionResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ML_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(PREDICT_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ csv }),
+      signal: controller.signal as any,
+    });
+  } catch (e: any) {
+    throw new Error(
+      e?.name === "AbortError"
+        ? "The AI server took too long to respond. Please try again in a minute."
+        : "Cannot reach the AI server. Check your internet connection.",
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  const text = await res.text();
+  let body: any = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  if (!res.ok) {
+    throw new Error(
+      body?.error ||
+        (res.status >= 500
+          ? "The AI server could not process this file. Please try again."
+          : `Prediction failed (${res.status}).`),
+    );
+  }
+  if (!body || typeof body.probability !== "number" || typeof body.riskScore !== "number") {
+    throw new Error("The AI server sent an unexpected response.");
+  }
+  return body as PredictionResponse;
+}
+
+// Model risk band (same 0.5 / 0.8 thresholds as the ML API and admin side).
+function levelOf(riskLevel: string | undefined, riskScore: number): "low" | "medium" | "high" {
+  const l = (riskLevel || "").toLowerCase();
+  if (l === "low" || l === "medium" || l === "high") return l;
+  return riskScore >= 80 ? "high" : riskScore >= 50 ? "medium" : "low";
 }
 
 // ─── Date helpers ─────────────────────────────────────────────────
@@ -148,6 +232,7 @@ export default function ConsumerDashboard() {
   const [csvContent, setCsvContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [submitStage, setSubmitStage] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [today] = useState(new Date());
 
@@ -291,7 +376,10 @@ export default function ConsumerDashboard() {
       setCsvContent(text);
       setCsvStats(stats);
     } catch (e: any) {
-      Alert.alert("Error", e.message || "Failed to read CSV file.");
+      setCsvFileName(null);
+      setCsvContent("");
+      setCsvStats(null);
+      Alert.alert("Invalid CSV", e.message || "Failed to read CSV file.");
     }
   };
 
@@ -302,50 +390,67 @@ export default function ConsumerDashboard() {
       return;
     }
     setSubmitting(true);
+    setSubmitStage("Analysing your consumption with the AI model…");
+    const slow = setTimeout(
+      () => setSubmitStage("Waking up the AI server — this can take up to a minute…"),
+      8000,
+    );
     try {
-      // Step 1: Send NaN-safe cleanedRows to the API
-      const apiResponse = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          csv: csvContent,
-          cleanedRows: csvStats.cleanedRows,
-        }),
-      });
+      // Step 1: real model inference (electra-api /predict)
+      const prediction = await runPrediction(csvContent);
+      const riskScore = prediction.riskScore;
+      const riskLevel = levelOf(prediction.riskLevel, riskScore);
 
-      if (!apiResponse.ok) {
-        const errData = (await apiResponse.json()) as { error?: string };
-        throw new Error(errData.error || "Prediction failed");
+      // Step 2: save the result (failure here must not hide the result)
+      setSubmitStage("Saving result…");
+      let consumptionId = "";
+      try {
+        const docRef = await addDoc(collection(db, "consumptions"), {
+          consumerId: consumer.consumerId,
+          consumerName: consumer.fullName,
+          email: consumer.email,
+          uid: auth.currentUser?.uid ?? null,
+          dateRange: csvStats.dateRange,
+          totalUnits: csvStats.totalUnits,
+          avgUnits: csvStats.avgUnits,
+          estimatedBill: csvStats.estimatedBill,
+          riskScore,
+          riskLevel,
+          probability: prediction.probability,
+          prediction: prediction.prediction,
+          anomalies: prediction.anomalies ?? null,
+          dailyReadings: prediction.dailyReadings ?? [],
+          modelInput: prediction.input ?? null,
+          csvRaw: csvContent,
+          uploadedAt: new Date(),
+        });
+        consumptionId = docRef.id;
+      } catch (saveErr: any) {
+        console.warn("Saving consumption failed:", saveErr?.code || saveErr?.message);
+        Alert.alert(
+          "Result not saved",
+          "The AI result is shown, but it could not be saved to your history. Check your connection.",
+        );
       }
 
-      const prediction = (await apiResponse.json()) as PredictionResponse;
-      const riskScore = prediction.riskScore ?? 0;
-
-      // Step 2: Save to Firestore
-      const docRef = await addDoc(collection(db, "consumptions"), {
-        consumerId: consumer.consumerId,
-        consumerName: consumer.fullName,
-        email: consumer.email,
-        dateRange: csvStats.dateRange,
-        totalUnits: csvStats.totalUnits,
-        avgUnits: csvStats.avgUnits,
-        estimatedBill: csvStats.estimatedBill,
-        riskScore,
-        prediction: prediction.prediction,
-        csvRaw: csvContent,
-        uploadedAt: new Date(),
-      });
-
-      // Step 3: Navigate to result screen
+      // Step 3: show the actual model output
       router.push({
         pathname: "/src/Consumer/DetectionResultScreen" as any,
         params: {
-          consumptionId: docRef.id,
+          consumptionId,
           totalUnits: String(csvStats.totalUnits),
           avgUnits: String(csvStats.avgUnits),
           estimatedBill: String(csvStats.estimatedBill),
           riskScore: String(riskScore),
+          riskLevel,
+          probability: String(prediction.probability),
+          prediction: prediction.prediction,
           dateRange: csvStats.dateRange,
+          result: JSON.stringify({
+            anomalies: prediction.anomalies ?? null,
+            dailyReadings: prediction.dailyReadings ?? [],
+            input: prediction.input ?? null,
+          }),
         },
       });
 
@@ -354,21 +459,26 @@ export default function ConsumerDashboard() {
       setCsvContent("");
       await fetchConsumptions(consumer.consumerId);
     } catch (e: any) {
-      Alert.alert("Error", e.message || "Failed to submit. Try again.");
+      Alert.alert("Detection failed", e.message || "Failed to submit. Try again.");
     } finally {
+      clearTimeout(slow);
       setSubmitting(false);
+      setSubmitStage("");
     }
   };
 
   // ── Risk color ────────────────────────────────────────────────
-  const riskColor = (score: number) =>
-    score <= 30 ? "#2EC4B6" : score <= 60 ? "#F59E0B" : "#EF4444";
+  // Same bands as the model: < 50 low, 50–79 medium, >= 80 high.
+  const riskColor = (score: number, level?: string) => {
+    const l = levelOf(level, score);
+    return l === "low" ? "#34C759" : l === "medium" ? "#FF9500" : "#FF3B30";
+  };
 
   // ── Loading ───────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0B3C5D" />
+        <ActivityIndicator size="large" color="#111111" />
       </View>
     );
   }
@@ -377,7 +487,21 @@ export default function ConsumerDashboard() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <TabHero
+        title={`Welcome back, ${firstName}`}
+        subtitle={`ID ${consumer?.consumerId ?? "—"}  •  Active`}
+        right={<ConsumerBell />}
+      >
+        <Text style={styles.dateText}>
+          {today.toLocaleDateString("en-US", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })}
+        </Text>
+      </TabHero>
       <ScrollView
         contentContainerStyle={styles.container}
         refreshControl={
@@ -389,44 +513,9 @@ export default function ConsumerDashboard() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Header Card ── */}
-        <View style={styles.headerCard}>
-          <View style={styles.headerTop}>
-            <View style={styles.logoRow}>
-              <Image
-                source={require("../../../assets/logo.png")}
-                style={styles.logoImg}
-                resizeMode="contain"
-              />
-              <Text style={styles.logoText}>Electra Guard</Text>
-            </View>
-          </View>
-          <View style={styles.welcomeRow}>
-            <View>
-              <Text style={styles.welcomeText}>Welcome back, {firstName}</Text>
-              <View style={styles.idRow}>
-                <Text style={styles.idText}>
-                  ID: {consumer?.consumerId ?? "—"}
-                </Text>
-                <View style={styles.activeBadge}>
-                  <Text style={styles.activeBadgeText}>Active</Text>
-                </View>
-              </View>
-              <Text style={styles.dateText}>
-                {today.toLocaleDateString("en-US", {
-                  weekday: "long",
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </Text>
-            </View>
-          </View>
-        </View>
-
         {/* ── Date Range Pill ── */}
         <View style={styles.dateRangePill}>
-          <Ionicons name="calendar-outline" size={14} color="#0B3C5D" />
+          <Ionicons name="calendar-outline" size={14} color="#111111" />
           <Text style={styles.dateRangeText}>
             {csvStats?.dateRange ?? getDateRange()}
           </Text>
@@ -441,7 +530,7 @@ export default function ConsumerDashboard() {
         >
           {csvFileName ? (
             <View style={styles.fileSelectedContainer}>
-              <Ionicons name="document-text" size={32} color="#2EC4B6" />
+              <Ionicons name="document-text" size={32} color="#111111" />
               <Text style={styles.fileSelectedName} numberOfLines={1}>
                 {csvFileName}
               </Text>
@@ -449,9 +538,9 @@ export default function ConsumerDashboard() {
             </View>
           ) : (
             <View style={styles.uploadPlaceholder}>
-              <Ionicons name="cloud-upload-outline" size={36} color="#9CA3AF" />
+              <Ionicons name="cloud-upload-outline" size={36} color="#8E8E93" />
               <Text style={styles.uploadTitle}>Upload CSV File</Text>
-              <Text style={styles.uploadSub}>Supports up to 500MB files</Text>
+              <Text style={styles.uploadSub}>Daily kWh readings, at least {MIN_READINGS} days per row</Text>
               <View style={styles.selectBtn}>
                 <Ionicons name="folder-outline" size={14} color="#FFFFFF" />
                 <Text style={styles.selectBtnText}>Select File</Text>
@@ -496,13 +585,11 @@ export default function ConsumerDashboard() {
             <Text style={styles.submitBtnText}>Submit Units</Text>
           )}
         </TouchableOpacity>
+        {!!submitStage && <Text style={styles.stageText}>{submitStage}</Text>}
 
         {/* ── Recent Consumptions ── */}
         <View style={styles.recentHeader}>
           <Text style={styles.sectionTitle}>Recent Consumptions</Text>
-          <TouchableOpacity>
-            <Text style={styles.viewAll}>View All</Text>
-          </TouchableOpacity>
         </View>
 
         {consumptions.length === 0 ? (
@@ -529,6 +616,9 @@ export default function ConsumerDashboard() {
                       avgUnits: String(item.avgUnits),
                       estimatedBill: String(item.estimatedBill),
                       riskScore: String(item.riskScore),
+                      riskLevel: item.riskLevel ?? "",
+                      probability: item.probability != null ? String(item.probability) : "",
+                      prediction: item.prediction ?? "",
                       dateRange: item.dateRange,
                     },
                   })
@@ -543,13 +633,13 @@ export default function ConsumerDashboard() {
                 <View
                   style={[
                     styles.riskBadge,
-                    { backgroundColor: riskColor(item.riskScore) + "20" },
+                    { backgroundColor: riskColor(item.riskScore, item.riskLevel) + "20" },
                   ]}
                 >
                   <Text
                     style={[
                       styles.riskBadgeText,
-                      { color: riskColor(item.riskScore) },
+                      { color: riskColor(item.riskScore, item.riskLevel) },
                     ]}
                   >
                     Risk {item.riskScore}%
@@ -564,8 +654,11 @@ export default function ConsumerDashboard() {
       {/* ── Chatbot FAB ── */}
       <TouchableOpacity
         style={styles.chatFab}
-        onPress={() => router.push("/src/Consumer/supportscreen" as any)}
+        onPress={() => router.push("/src/Consumer/ChatbotScreen" as any)}
         activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel="Open AI assistant chat"
+        hitSlop={8}
       >
         <Ionicons name="help-circle" size={28} color="#FFFFFF" />
       </TouchableOpacity>
@@ -575,29 +668,24 @@ export default function ConsumerDashboard() {
 
 // ─── Styles ───────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F8FAFC" },
+  screen: { flex: 1, backgroundColor: "#F2F2F7" },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#F2F2F7",
   },
-  container: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 100 },
+  container: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 110 },
   headerCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
+    backgroundColor: "#007AFF",
+    borderRadius: 18,
     padding: 18,
     marginBottom: 14,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
   },
   headerTop: { marginBottom: 12 },
   logoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   logoImg: { width: 36, height: 36 },
-  logoText: { fontFamily: "Poppins_700Bold", fontSize: 18, color: "#0B3C5D" },
+  logoText: { fontFamily: "Poppins_700Bold", fontSize: 18, color: "#FFFFFF" },
   welcomeRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -606,7 +694,7 @@ const styles = StyleSheet.create({
   welcomeText: {
     fontFamily: "Poppins_600SemiBold",
     fontSize: 16,
-    color: "#1F2933",
+    color: "#FFFFFF",
     marginBottom: 4,
   },
   idRow: {
@@ -615,7 +703,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  idText: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#6B7280" },
+  idText: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#E5E5EA" },
   activeBadge: {
     backgroundColor: "#DCFCE7",
     borderRadius: 20,
@@ -625,14 +713,19 @@ const styles = StyleSheet.create({
   activeBadgeText: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 11,
-    color: "#16A34A",
+    color: "#34C759",
   },
-  dateText: { fontFamily: "Inter_400Regular", fontSize: 12, color: "#9CA3AF" },
+  dateText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: "#E5E5EA",
+    marginTop: 10,
+  },
   dateRangePill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#E8F1FF",
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -642,19 +735,19 @@ const styles = StyleSheet.create({
   dateRangeText: {
     fontFamily: "Inter_500Medium",
     fontSize: 13,
-    color: "#0B3C5D",
+    color: "#111111",
   },
   sectionTitle: {
     fontFamily: "Poppins_600SemiBold",
     fontSize: 15,
-    color: "#1F2933",
+    color: "#111111",
     marginBottom: 12,
   },
   uploadBox: {
     backgroundColor: "#FFFFFF",
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: "#2EC4B6",
+    borderColor: "#E5E5EA",
     borderStyle: "dashed",
     padding: 24,
     alignItems: "center",
@@ -669,12 +762,12 @@ const styles = StyleSheet.create({
     color: "#374151",
     marginTop: 4,
   },
-  uploadSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "#9CA3AF" },
+  uploadSub: { fontFamily: "Inter_400Regular", fontSize: 12, color: "#8E8E93" },
   selectBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#0B3C5D",
+    backgroundColor: "#007AFF",
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 9,
@@ -683,20 +776,20 @@ const styles = StyleSheet.create({
   selectBtnText: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 13,
-    color: "#FFFFFF",
+    color: "#111111",
   },
   fileSelectedContainer: { alignItems: "center", gap: 8 },
   fileSelectedName: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 14,
-    color: "#0B3C5D",
+    color: "#111111",
     maxWidth: 260,
     textAlign: "center",
   },
   fileSelectedSub: {
     fontFamily: "Inter_400Regular",
     fontSize: 12,
-    color: "#9CA3AF",
+    color: "#8E8E93",
   },
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
   statCard: {
@@ -710,20 +803,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 4,
   },
-  statValue: { fontFamily: "Poppins_700Bold", fontSize: 20, color: "#0B3C5D" },
+  statValue: { fontFamily: "Poppins_700Bold", fontSize: 20, color: "#007AFF" },
   statLabel: {
     fontFamily: "Inter_400Regular",
     fontSize: 11,
-    color: "#6B7280",
+    color: "#8E8E93",
     textAlign: "center",
   },
-  statUnit: { fontFamily: "Inter_400Regular", fontSize: 10, color: "#9CA3AF" },
+  statUnit: { fontFamily: "Inter_400Regular", fontSize: 10, color: "#8E8E93" },
   submitBtn: {
-    backgroundColor: "#0B3C5D",
+    backgroundColor: "#007AFF",
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
     marginBottom: 28,
+  },
+  stageText: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: -18,
+    marginBottom: 24,
   },
   submitBtnText: {
     fontFamily: "Inter_600SemiBold",
@@ -736,7 +837,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
-  viewAll: { fontFamily: "Inter_500Medium", fontSize: 13, color: "#2EC4B6" },
   recentScroll: { marginHorizontal: -20, paddingLeft: 20 },
   recentCard: {
     backgroundColor: "#FFFFFF",
@@ -752,18 +852,18 @@ const styles = StyleSheet.create({
   recentDateRange: {
     fontFamily: "Inter_400Regular",
     fontSize: 11,
-    color: "#9CA3AF",
+    color: "#8E8E93",
     marginBottom: 6,
   },
   recentUnits: {
     fontFamily: "Poppins_700Bold",
     fontSize: 22,
-    color: "#0B3C5D",
+    color: "#111111",
   },
   recentUnitLabel: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    color: "#6B7280",
+    color: "#8E8E93",
   },
   riskBadge: {
     marginTop: 8,
@@ -780,7 +880,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  emptyText: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#9CA3AF" },
+  emptyText: { fontFamily: "Inter_400Regular", fontSize: 13, color: "#8E8E93" },
   chatFab: {
     position: "absolute",
     bottom: 30,
@@ -788,7 +888,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: "#0B3C5D",
+    backgroundColor: "#007AFF",
     justifyContent: "center",
     alignItems: "center",
     elevation: 6,

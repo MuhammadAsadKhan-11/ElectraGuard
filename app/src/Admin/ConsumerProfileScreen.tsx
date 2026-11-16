@@ -6,7 +6,6 @@ import {
   Dimensions,
   Linking,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -21,6 +20,8 @@ import {
   riskColor,
   severityColor,
 } from "../../../constants/adminUi";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useAdminOverlay } from "../../../components/AdminOverlay";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { getStrings } from "../../../constants/caseScreensStrings";
 import {
@@ -118,6 +119,7 @@ const MiniLineChart = ({
 // ─── Screen ──────────────────────────────────────────────────
 export default function ConsumerProfileScreen() {
   const router = useRouter();
+  const overlay = useAdminOverlay();
   const { colors, language } = useAppSettings();
   const S = getStrings(language).consumerProfileAdmin;
 
@@ -384,16 +386,16 @@ export default function ConsumerProfileScreen() {
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: palette.danger }]}
             onPress={() =>
-              router.push({
-                pathname: "/src/Admin/createCaseScreen",
-                params: { consumerId: consumer.consumerId, consumerName: consumer.name },
-              } as any)
+              overlay?.openCreate({
+                consumerId: consumer.consumerId,
+                consumerName: consumer.name,
+              })
             }
           >
             <Text style={styles.actionBtnText}>{S.createCase}</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: palette.teal }]}
+            style={[styles.actionBtn, { backgroundColor: palette.primary }]}
             onPress={contactSupport}
           >
             <Text style={styles.actionBtnText}>{S.contactBtn}</Text>
@@ -412,7 +414,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    paddingTop: 30,
+    paddingTop: 14,
     margin: 16,
     borderRadius: 16,
     shadowColor: "#000",
@@ -437,7 +439,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 10,
   },
-  retryText: { color: "#fff", fontWeight: "700" },
+  retryText: { color: "#FFFFFF", fontWeight: "700" },
 
   card: {
     borderRadius: 16,
@@ -533,5 +535,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  actionBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  actionBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
 });

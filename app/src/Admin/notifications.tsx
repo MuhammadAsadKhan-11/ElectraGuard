@@ -6,13 +6,13 @@ import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { StackBar } from "../../../components/AppChrome";
 import { palette, timeAgo } from "../../../constants/adminUi";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { AppNotification, useNotifications } from "../../../hooks/useAdminApi";
@@ -35,7 +35,7 @@ const severityColor = (s: string): string => {
   return palette.accent;
 };
 
-export default function NotificationsScreen() {
+export default function NotificationsScreen(props?: { onClose?: () => void }) {
   const router = useRouter();
   const { colors } = useAppSettings();
   const { items, unread, loaded, error, refresh, markRead, markAllRead } =
@@ -53,8 +53,11 @@ export default function NotificationsScreen() {
   };
 
   const goBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/src/Admin/DashboardScreen" as any);
+    if (props?.onClose) {
+      props.onClose();
+      return;
+    }
+    router.replace("/src/Admin/CasesScreen" as any);
   };
 
   const openItem = (n: AppNotification) => {
@@ -108,28 +111,18 @@ export default function NotificationsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
-
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.card }]}>
-        <TouchableOpacity onPress={goBack} style={styles.backBtn}>
-          <Text style={styles.backArrow}>←</Text>
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Notifications</Text>
-          <Text style={[styles.headerSub, { color: colors.subText }]}>
-            {unread > 0 ? `${unread} unread` : "All caught up"}
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={markAllRead}
-          disabled={unread === 0}
-          style={[styles.markAllBtn, unread === 0 && { opacity: 0.4 }]}
-        >
-          <Text style={styles.markAllText}>Mark all read</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={[styles.safe, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StackBar
+        title="Notifications"
+        subtitle={unread > 0 ? `${unread} unread` : "All caught up"}
+        onBack={goBack}
+        right={
+          <TouchableOpacity onPress={markAllRead} disabled={unread === 0} style={{ opacity: unread === 0 ? 0.45 : 1 }}>
+            <Text style={styles.markAllText}>Read all</Text>
+          </TouchableOpacity>
+        }
+      />
 
       {/* Tabs */}
       <View style={styles.tabs}>
@@ -190,7 +183,7 @@ export default function NotificationsScreen() {
           }
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -218,9 +211,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  markAllText: { color: palette.primary, fontSize: 12, fontWeight: "700" },
+  markAllText: { color: "#FFFFFF", fontSize: 13, fontFamily: "Inter_600SemiBold" },
 
-  tabs: { flexDirection: "row", paddingHorizontal: 16, marginBottom: 10, gap: 8 },
+  tabs: { flexDirection: "row", paddingHorizontal: 16, marginTop: 14, marginBottom: 10, gap: 8 },
   tabBtn: {
     paddingHorizontal: 16,
     paddingVertical: 7,
@@ -229,7 +222,7 @@ const styles = StyleSheet.create({
   },
   tabBtnActive: { backgroundColor: palette.primary, borderColor: palette.primary },
   tabText: { fontSize: 13, fontWeight: "600" },
-  tabTextActive: { color: "#fff" },
+  tabTextActive: { color: "#FFFFFF" },
 
   listContent: { paddingHorizontal: 16, paddingBottom: 30, gap: 10, flexGrow: 1 },
   item: {
@@ -261,5 +254,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 10,
   },
-  retryText: { color: "#fff", fontWeight: "700" },
+  retryText: { color: "#FFFFFF", fontWeight: "700" },
 });

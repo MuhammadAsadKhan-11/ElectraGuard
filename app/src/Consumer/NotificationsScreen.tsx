@@ -9,13 +9,13 @@ import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { StackBar } from "../../../components/AppChrome";
 import { Colors } from "../../../constants/Colors";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { getStrings } from "../../../constants/caseScreensStrings";
@@ -23,6 +23,12 @@ import { MyNotification, useMyNotifications } from "../../../hooks/useMyNotifica
 
 const ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   case_filed: "document-text-outline",
+  case_created: "document-text-outline",
+  case_assigned: "person-outline",
+  case_status_changed: "sync-outline",
+  evidence_uploaded: "attach-outline",
+  case_remark: "chatbox-ellipses-outline",
+  admin_message: "megaphone-outline",
   case_closed: "checkmark-circle-outline",
   case_escalated: "alert-circle-outline",
   alert: "notifications-outline",
@@ -54,8 +60,7 @@ export default function NotificationsScreen() {
 
   const openItem = (n: MyNotification) => {
     if (!n.read) markRead([n.id]);
-    // Case ke baare mein hai to consumer ko sirf status dikha dete hain — case ka
-    // internal detail admin-only hai, consumer yahi notification card mein dekh leta hai.
+    router.push({ pathname: "/src/Consumer/NotificationDetailScreen", params: { id: n.id } } as any);
   };
 
   const renderItem = ({ item: n }: { item: MyNotification }) => (
@@ -84,29 +89,35 @@ export default function NotificationsScreen() {
             {n.message}
           </Text>
         )}
-        <Text style={[styles.itemTime, { color: colors.subText }]}>{timeAgo(n.createdAt)}</Text>
+        <View style={styles.metaRow}>
+          <Text style={[styles.itemTime, { color: colors.subText }]}>
+            {timeAgo(n.createdAt)}
+            {n.caseId ? `  •  ${n.caseId}` : ""}
+          </Text>
+          {n.evidence?.length > 0 && (
+            <View style={styles.attachPill}>
+              <Ionicons name="attach-outline" size={12} color={Colors.primary} />
+              <Text style={styles.attachText}>{n.evidence.length}</Text>
+            </View>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
-
-      <View style={[styles.header, { backgroundColor: colors.card }]}>
-        <TouchableOpacity onPress={goBack} style={styles.backBtn}>
-          <Text style={styles.backArrow}>←</Text>
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>{t.notifications ?? S.title}</Text>
-          <Text style={[styles.headerSub, { color: colors.subText }]}>
-            {unread > 0 ? S.unread(unread) : S.allCaughtUp}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={markAllRead} disabled={unread === 0} style={[styles.markAllBtn, unread === 0 && { opacity: 0.4 }]}>
-          <Text style={styles.markAllText}>{S.markAllRead}</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={[styles.safe, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StackBar
+        title={t.notifications ?? S.title}
+        subtitle={unread > 0 ? S.unread(unread) : S.allCaughtUp}
+        onBack={goBack}
+        right={
+          <TouchableOpacity onPress={markAllRead} disabled={unread === 0} style={{ opacity: unread === 0 ? 0.45 : 1 }}>
+            <Text style={styles.markAllText}>{S.markAllRead}</Text>
+          </TouchableOpacity>
+        }
+      />
 
       <View style={styles.tabs}>
         {(["all", "unread"] as const).map((tKey) => (
@@ -133,6 +144,11 @@ export default function NotificationsScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
+          ListHeaderComponent={
+            error && items.length > 0 ? (
+              <Text style={styles.inlineError}>{error}</Text>
+            ) : undefined
+          }
           ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.emptyIcon}>🔕</Text>
@@ -148,7 +164,7 @@ export default function NotificationsScreen() {
           }
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -171,12 +187,12 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: "700" },
   headerSub: { fontSize: 12, marginTop: 2 },
   markAllBtn: { backgroundColor: Colors.primary + "15", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
-  markAllText: { color: Colors.primary, fontSize: 12, fontWeight: "700" },
-  tabs: { flexDirection: "row", paddingHorizontal: 16, marginBottom: 10, gap: 8 },
+  markAllText: { color: "#FFFFFF", fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  tabs: { flexDirection: "row", paddingHorizontal: 16, marginTop: 14, marginBottom: 10, gap: 8 },
   tabBtn: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
   tabBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   tabText: { fontSize: 13, fontWeight: "600" },
-  tabTextActive: { color: "#fff" },
+  tabTextActive: { color: "#FFFFFF" },
   listContent: { paddingHorizontal: 16, paddingBottom: 30, gap: 10, flexGrow: 1 },
   item: {
     flexDirection: "row",
@@ -193,10 +209,14 @@ const styles = StyleSheet.create({
   itemTitle: { flex: 1, fontSize: 14 },
   dot: { width: 9, height: 9, borderRadius: 5, marginTop: 5, backgroundColor: Colors.primary },
   itemMsg: { fontSize: 12, marginTop: 3, lineHeight: 17 },
-  itemTime: { fontSize: 11, marginTop: 6 },
+  itemTime: { fontSize: 11 },
+  metaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 6 },
+  attachPill: { flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: Colors.primary + "15", borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
+  attachText: { fontSize: 11, fontWeight: "700", color: Colors.primary },
   center: { alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
   emptyText: { fontSize: 15, fontWeight: "700" },
   retryBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10, marginTop: 12 },
-  retryText: { color: "#fff", fontWeight: "700" },
+  retryText: { color: "#FFFFFF", fontWeight: "700" },
+  inlineError: { color: "#B91C1C", fontSize: 12, textAlign: "center", marginBottom: 6 },
 });

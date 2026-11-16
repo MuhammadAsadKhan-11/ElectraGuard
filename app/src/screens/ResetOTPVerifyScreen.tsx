@@ -1,36 +1,30 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
-import React, { useEffect, useRef, useState } from "react";
+import { AuthScreen, NAVY, OtpInput } from "../../../components/AuthChrome";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { db } from "../../../firebaseConfig";
+import { requestResetCode, verifyResetCode } from "../../../hooks/authSession";
 
 export default function ResetOTPVerifyScreen() {
-  // FIX: Receive docId + collectionName instead of raw OTP + expiresAt
-  const { email, docId, collectionName, portal } = useLocalSearchParams<{
+  const { identifier, email, portal, resendIn } = useLocalSearchParams<{
+    identifier: string;
     email: string;
-    docId: string;
-    collectionName: string;
     portal: string;
+    resendIn?: string;
   }>();
 
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
-  const [countdown, setCountdown] = useState(60);
+  const [countdown, setCountdown] = useState(Number(resendIn || 60));
   const [canResend, setCanResend] = useState(false);
-  const inputRef = useRef<TextInput>(null);
-
-  const isAdmin = portal === "admin";
-  const accent = isAdmin ? "#1A73E8" : "#2EC4B6";
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     if (countdown <= 0) {
@@ -42,219 +36,173 @@ export default function ResetOTPVerifyScreen() {
   }, [countdown]);
 
   const handleVerify = async () => {
-    if (!otp || otp.length < 6) {
+    if (!/^\d{6}$/.test(otp.trim())) {
       Alert.alert("Error", "Please enter the 6-digit code.");
+      return;
+    }
+    if (!identifier) {
+      Alert.alert("Error", "Please start the password reset again.");
+      router.replace("/src/screens/ForgotPasswordScreen");
       return;
     }
     setLoading(true);
     try {
-      // FIX: Fetch OTP from Firestore — never trust URL params for security
-      const docSnap = await getDoc(doc(db, collectionName, docId));
-      if (!docSnap.exists()) {
-        Alert.alert("Error", "Account not found. Please try again.");
-        setLoading(false);
-        return;
-      }
-
-      const data = docSnap.data();
-      const storedOtp = data?.resetOtp as string;
-      const expiresAt = data?.resetOtpExpiresAt as number;
-
-      if (!storedOtp || !expiresAt) {
-        Alert.alert("Error", "No OTP found. Please request a new one.");
-        setLoading(false);
-        return;
-      }
-
-      if (Date.now() > expiresAt) {
-        Alert.alert("Expired", "OTP has expired. Please request a new one.");
-        setLoading(false);
-        return;
-      }
-
-      if (otp.trim() !== storedOtp.trim()) {
-        Alert.alert("Invalid Code", "The code you entered is incorrect.");
-        setLoading(false);
-        return;
-      }
-
-      // FIX: Clear the OTP from Firestore after successful verification
-      await updateDoc(doc(db, collectionName, docId), {
-        resetOtp: null,
-        resetOtpExpiresAt: null,
-      });
-
+      const res = await verifyResetCode(String(identifier), otp.trim());
       router.replace({
         pathname: "/src/screens/ResetPasswordScreen",
-        params: { email, portal: portal ?? "consumer" },
+        params: { email: res.email, portal: res.portal ?? portal ?? "consumer" },
       });
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Verification failed.");
+      setOtp("");
+      Alert.alert("Invalid Code", error?.message || "Verification failed.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResend = () => {
-    router.back(); // Back to ForgotPasswordScreen to resend
+  const handleResend = async () => {
+    if (!identifier || resending) return;
+    setResending(true);
+    try {
+      const res = await requestResetCode(String(identifier), true);
+      setCanResend(false);
+      setCountdown(res.resendIn ?? 60);
+      Alert.alert("Code Sent", `A new code has been sent to ${res.maskedEmail || email}.`);
+    } catch (error: any) {
+      Alert.alert("Error", error?.message || "Could not resend the code.");
+    } finally {
+      setResending(false);
+    }
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={22} color={accent} />
-      </TouchableOpacity>
-
-      <Text style={styles.headerTitle}>Verify Code</Text>
-
-      <View style={[styles.iconContainer, { backgroundColor: accent }]}>
-        <Ionicons name="shield-checkmark-outline" size={32} color="#FFFFFF" />
-      </View>
-
-      <Text style={styles.title}>Enter Verification Code</Text>
+    <AuthScreen>
+      <Text style={styles.title}>Enter the code</Text>
       <Text style={styles.subtitle}>
         We sent a 6-digit code to{"\n"}
-        <Text style={[styles.emailHighlight, { color: accent }]}>{email}</Text>
+        <Text style={styles.emailHighlight}>{email}</Text>
       </Text>
 
-      <TextInput
-        ref={inputRef}
-        style={[styles.otpInput, { borderColor: accent }]}
-        placeholder="● ● ● ● ● ●"
-        placeholderTextColor="#B0BEC5"
-        value={otp}
-        onChangeText={setOtp}
-        keyboardType="numeric"
-        maxLength={6}
-        textAlign="center"
-        autoFocus
-      />
+      <OtpInput value={otp} onChangeText={setOtp} />
 
-      <View style={styles.noticeBox}>
-        <Ionicons name="time-outline" size={16} color={accent} />
-        <Text style={styles.noticeText}>Code expires in 10 minutes</Text>
+      <View style={styles.notice}>
+        <Ionicons name="time-outline" size={16} color="#111111" />
+        <Text style={styles.noticeText}>This code expires in 10 minutes.</Text>
       </View>
 
       <TouchableOpacity
-        style={[styles.verifyButton, { backgroundColor: accent }]}
+        style={[styles.button, (loading || otp.length < 6) && styles.buttonDisabled]}
         onPress={handleVerify}
-        disabled={loading}
+        disabled={loading || otp.length < 6}
       >
         {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
+          <ActivityIndicator color="#111111" />
         ) : (
-          <Text style={styles.verifyButtonText}>Verify Code</Text>
+          <>
+            <Ionicons name="shield-checkmark-outline" size={18} color="#111111" />
+            <Text style={styles.buttonText}>Verify code</Text>
+          </>
         )}
       </TouchableOpacity>
 
       <View style={styles.resendRow}>
-        <Text style={styles.resendLabel}>{"Didn't receive the code?"} </Text>
+        <Text style={styles.resendLabel}>Didn't receive the code? </Text>
         {canResend ? (
           <TouchableOpacity onPress={handleResend}>
-            <Text style={[styles.resendLink, { color: accent }]}>Resend</Text>
+            <Text style={styles.resendLink}>Resend</Text>
           </TouchableOpacity>
         ) : (
           <Text style={styles.resendCountdown}>Resend in {countdown}s</Text>
         )}
       </View>
 
-      <TouchableOpacity onPress={() => router.push("/src/screens/LoginScreen")}>
-        <Text style={[styles.backToLogin, { color: accent }]}>
-          Back to Login
-        </Text>
+      <TouchableOpacity style={styles.backRow} onPress={() => router.push("/src/screens/LoginScreen")}>
+        <Ionicons name="arrow-back" size={16} color="#111111" />
+        <Text style={styles.backText}>Back to sign in</Text>
       </TouchableOpacity>
-    </View>
+    </AuthScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    alignItems: "center",
-  },
-  backBtn: { position: "absolute", top: 50, left: 20, padding: 8 },
-  headerTitle: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 16,
-    color: "#1F2933",
-    marginBottom: 32,
-  },
-  iconContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 24,
-  },
   title: {
     fontFamily: "Poppins_700Bold",
-    fontSize: 22,
-    color: "#1F2933",
-    marginBottom: 10,
-    textAlign: "center",
+    fontSize: 24,
+    color: "#111111",
   },
   subtitle: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    color: "#6B7280",
-    textAlign: "center",
+    color: "#8E8E93",
     lineHeight: 20,
-    marginBottom: 28,
+    marginTop: 4,
+    marginBottom: 18,
   },
-  emailHighlight: { fontFamily: "Inter_600SemiBold" },
-  otpInput: {
-    width: "100%",
-    backgroundColor: "#F9FAFB",
-    borderWidth: 2,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-    fontFamily: "Inter_700Bold",
-    fontSize: 28,
-    color: "#1F2933",
-    marginBottom: 16,
-    letterSpacing: 12,
+  emailHighlight: {
+    color: NAVY,
+    fontFamily: "Inter_600SemiBold",
   },
-  noticeBox: {
+  notice: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 28,
+    gap: 8,
+    backgroundColor: "#E8F1FF",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 18,
   },
   noticeText: {
     fontFamily: "Inter_400Regular",
     fontSize: 12,
-    color: "#6B7280",
+    color: NAVY,
   },
-  verifyButton: {
+  button: {
     width: "100%",
-    borderRadius: 8,
+    backgroundColor: NAVY,
+    borderRadius: 14,
     paddingVertical: 15,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
     marginBottom: 16,
   },
-  verifyButtonText: {
+  buttonDisabled: { opacity: 0.55 },
+  buttonText: {
     fontFamily: "Inter_600SemiBold",
-    fontSize: 15,
+    fontSize: 16,
     color: "#FFFFFF",
   },
-  resendRow: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
+  resendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
   resendLabel: {
     fontFamily: "Inter_400Regular",
     fontSize: 13,
-    color: "#6B7280",
+    color: "#8E8E93",
   },
-  resendLink: { fontFamily: "Inter_600SemiBold", fontSize: 13 },
+  resendLink: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+    color: NAVY,
+  },
   resendCountdown: {
     fontFamily: "Inter_500Medium",
     fontSize: 13,
-    color: "#9CA3AF",
+    color: "#8E8E93",
   },
-  backToLogin: { fontFamily: "Inter_500Medium", fontSize: 14 },
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  backText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+    color: NAVY,
+  },
 });

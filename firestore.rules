@@ -1,0 +1,98 @@
+rules_version = '2';
+
+// ElectraGuard Firestore rules.
+// The FastAPI backend uses the Admin SDK, which bypasses these rules; everything
+// below only limits what the mobile/web app can do directly.
+//
+// Deploy (after the updated app + backend are live):
+//   firebase deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function myConsumer() {
+      return get(/databases/$(database)/documents/consumers/$(request.auth.uid)).data;
+    }
+    function isMyConsumerId(cid) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/consumers/$(request.auth.uid))
+        && myConsumer().consumerId == cid;
+    }
+    function onlyChanges(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ── Accounts ───────────────────────────────────────────────
+    // Admin records are created in the console / by the backend, never by the app.
+    match /admins/{adminId} {
+      allow read: if signedIn() && (adminId == request.auth.uid || resource.data.uid == request.auth.uid);
+      allow update: if signedIn() && adminId == request.auth.uid
+        && onlyChanges(['fullName', 'name', 'mobileNumber', 'phone', 'passwordHash', 'passwordEncoded']);
+      allow delete: if signedIn() && (adminId == request.auth.uid || resource.data.uid == request.auth.uid);
+      allow create: if false;
+    }
+
+    match /consumers/{uid} {
+      allow read: if signedIn() && (uid == request.auth.uid || resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if signedIn() && uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.role == 'consumer';
+      // role / uid / consumerId and the 2FA bookkeeping are server-managed
+      allow update: if signedIn() && uid == request.auth.uid
+        && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['uid', 'role', 'consumerId', 'isVerified', 'lastVerifiedAt', 'loginOtp', 'loginOtpExpiresAt']);
+      allow delete: if signedIn() && uid == request.auth.uid;
+    }
+
+    // legacy profile collection read by the consumer dashboard fallback
+    match /users/{uid} {
+      allow read: if signedIn() && uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // ── Consumer data ──────────────────────────────────────────
+    match /consumptions/{id} {
+      allow read: if isAdmin() || (signedIn() && isMyConsumerId(resource.data.consumerId));
+      allow create: if signedIn() && isMyConsumerId(request.resource.data.consumerId);
+      allow update, delete: if false;
+    }
+
+    // Consumers file their own reports; admins manage cases through the backend.
+    match /cases/{id} {
+      allow read: if isAdmin()
+        || (signedIn() && (resource.data.uid == request.auth.uid || isMyConsumerId(resource.data.consumerId)));
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && isMyConsumerId(request.resource.data.consumerId);
+      allow update, delete: if false;
+    }
+
+    // Written only by the backend; a consumer can read their own.
+    // Read/unread goes through POST /api/consumers/me/notifications/mark-read.
+    match /consumerNotifications/{id} {
+      allow read: if signedIn() && resource.data.recipientUid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // ── Public / reference content ─────────────────────────────
+    match /issueTypes/{id}      { allow read: if true; allow write: if isAdmin(); }
+    match /learnContent/{id}    { allow read: if true; allow write: if isAdmin(); }
+    match /supportContent/{id}  { allow read: if true; allow write: if isAdmin(); }
+    match /keyInsights/{id}     { allow read: if isAdmin(); allow write: if false; }
+    match /systemAlerts/{id}    { allow read: if isAdmin(); allow write: if false; }
+
+    // ── Server-only (OTP challenges, 2FA sessions, admin state, legacy) ──
+    match /authOtpChallenges/{id}      { allow read, write: if false; }
+    match /authSessions/{id}           { allow read, write: if false; }
+    match /adminNotificationState/{id} { allow read, write: if false; }
+    match /adminVerifyTokens/{id}      { allow read, write: if false; }
+    match /mail/{id}                   { allow read, write: if false; }
+    match /notifications/{path=**}     { allow read, write: if false; }
+
+    // Anything not listed above is closed.
+    match /{document=**} { allow read, write: if false; }
+  }
+}
