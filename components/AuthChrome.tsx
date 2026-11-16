@@ -21,7 +21,7 @@ export const NAVY = "#0B3C5D";
 export function AuthScreen({ children }: { children: ReactNode }) {
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -73,7 +73,7 @@ export function OtpInput({
   value: string;
   onChangeText: (value: string) => void;
 }) {
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
 
   return (
     <TouchableOpacity
@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
     color: palette.black,
   },
   otpCapture: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     color: "transparent",
   },
 });

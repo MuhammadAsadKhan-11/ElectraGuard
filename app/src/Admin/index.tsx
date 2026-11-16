@@ -167,8 +167,8 @@ const MiniChart = ({
       </View>
 
       <View style={{ height: CHART_HEIGHT + 18, marginTop: 8 }}>
-        {ticks.map((t) => (
-          <View key={t.value} style={[styles.gridLineRow, { bottom: t.bottom + 18 }]}>
+        {ticks.map((t, ti) => (
+          <View key={`tick-${ti}`} style={[styles.gridLineRow, { bottom: t.bottom + 18 }]}>
             <Text style={[styles.gridLabel, { color: colors.subText }]}>
               {t.value}
             </Text>
@@ -181,14 +181,14 @@ const MiniChart = ({
             if (i === 0) return null;
             const prev = points[i - 1];
             return (
-              <React.Fragment key={`seg-${p.date}`}>
+              <React.Fragment key={`seg-${i}-${p.date}`}>
                 {segment(getX(i - 1), getY(prev.normal), getX(i), getY(p.normal), palette.accent, `n-${i}`)}
                 {segment(getX(i - 1), getY(prev.theft), getX(i), getY(p.theft), palette.secondary, `t-${i}`)}
               </React.Fragment>
             );
           })}
           {points.map((p, i) => (
-            <React.Fragment key={`dots-${p.date}`}>
+            <React.Fragment key={`dots-${i}-${p.date}`}>
               <View
                 style={[
                   styles.chartDot,
@@ -207,7 +207,7 @@ const MiniChart = ({
 
         {points.map((p, i) => (
           <Text
-            key={`x-${p.date}`}
+            key={`x-${i}-${p.date}`}
             style={[
               styles.xLabel,
               { left: getX(i) - 18, top: CHART_HEIGHT + 4, color: colors.subText },
@@ -270,7 +270,7 @@ export default function DashboardScreen() {
 
   return (
     <View style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={palette.ink} />
+      <StatusBar barStyle="light-content" />
       <TabHero
         title="Dashboard"
         subtitle={adminName}

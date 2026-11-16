@@ -197,7 +197,7 @@ export default function NotificationDetailScreen() {
 
   return (
     <View style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <StackBar title="Notification" subtitle={notification?.caseId ? `Case ${notification.caseId}` : undefined} onBack={goBack} />
 
       {!loaded ? (

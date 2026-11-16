@@ -85,3 +85,23 @@ export async function requestResetCode(identifier: string, resend = false): Prom
 export async function verifyResetCode(identifier: string, code: string): Promise<{ email: string; portal: PortalRole }> {
   return apiPostJson("/api/auth/password-reset/verify", { identifier, code }, { auth: false });
 }
+
+// ── Profile: two-factor authentication on/off (needs an emailed code) ──
+export interface TwoFactorStatus {
+  enabled: boolean;
+  available: boolean;
+  maskedEmail: string;
+}
+
+export function getTwoFactorStatus(): Promise<TwoFactorStatus> {
+  return apiFetch<TwoFactorStatus>("/api/auth/2fa");
+}
+
+export function requestTwoFactorChange(enable: boolean, resend = false): Promise<OtpRequestResult> {
+  return apiPostJson<OtpRequestResult>("/api/auth/2fa/request", { enable, resend });
+}
+
+export async function confirmTwoFactorChange(enable: boolean, code: string): Promise<{ enabled: boolean }> {
+  const deviceId = await getDeviceId();
+  return apiPostJson("/api/auth/2fa/confirm", { enable, code, deviceId });
+}

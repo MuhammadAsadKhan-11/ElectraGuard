@@ -300,7 +300,7 @@ export default function ReportsScreen(): React.ReactElement {
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <TabHero
         title="Reports"
         subtitle="Theft statistics and performance"

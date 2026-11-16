@@ -444,7 +444,7 @@ export default function LearnScreen(): React.ReactElement {
   // ── Main UI ───────────────────────────────────────────────
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <TabHero
         title="Energy awareness"
         subtitle="Learn how to use less electricity and spot theft."

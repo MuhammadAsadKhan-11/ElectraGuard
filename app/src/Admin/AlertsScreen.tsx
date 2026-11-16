@@ -52,7 +52,7 @@ export default function AlertsScreen(): React.ReactElement {
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <StackBar
         title="System alerts"
         subtitle={`${activeCount} active notification${activeCount === 1 ? "" : "s"}`}

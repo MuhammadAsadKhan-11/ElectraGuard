@@ -487,7 +487,7 @@ export default function ConsumerDashboard() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <TabHero
         title={`Welcome back, ${firstName}`}
         subtitle={`ID ${consumer?.consumerId ?? "—"}  •  Active`}
@@ -654,10 +654,10 @@ export default function ConsumerDashboard() {
       {/* ── Chatbot FAB ── */}
       <TouchableOpacity
         style={styles.chatFab}
-        onPress={() => router.push("/src/Consumer/ChatbotScreen" as any)}
+        onPress={() => router.push("/src/Consumer/supportscreen" as any)}
         activeOpacity={0.85}
         accessibilityRole="button"
-        accessibilityLabel="Open AI assistant chat"
+        accessibilityLabel="Open help and support"
         hitSlop={8}
       >
         <Ionicons name="help-circle" size={28} color="#FFFFFF" />

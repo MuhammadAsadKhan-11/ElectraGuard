@@ -149,7 +149,7 @@ export default function RisksScreen() {
 
   return (
     <View style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <TabHero
         title="High-risk consumers"
         subtitle="Accounts that need a closer look"

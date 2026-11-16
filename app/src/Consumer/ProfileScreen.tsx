@@ -28,6 +28,7 @@ import { Language, Theme } from "../../../constants/translations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../../../firebaseConfig";
 import { resetSessionStores, signOutEverywhere } from "../../../hooks/authSession";
+import TwoFactorSetting from "../../../components/TwoFactorSetting";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { useMyNotifications } from "../../../hooks/useMyNotifications";
 
@@ -1034,7 +1035,7 @@ export default function ProfileScreen(): React.ReactElement {
 
   return (
     <View style={[styles.safeArea, { backgroundColor: "#0B3C5D" }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { backgroundColor: colors.background }]}
         showsVerticalScrollIndicator={false}
@@ -1130,12 +1131,7 @@ export default function ProfileScreen(): React.ReactElement {
             onPress={() => setShowPassModal(true)}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <MenuRow
-            icon="shield-outline"
-            label={t.twoFactor}
-            subtitle={t.twoFactorSub}
-            showChevron={false}
-          />
+          <TwoFactorSetting label={t.twoFactor} />
         </View>
 
         {/* ── About ── */}

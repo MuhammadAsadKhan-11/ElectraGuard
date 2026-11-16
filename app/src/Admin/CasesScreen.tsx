@@ -172,7 +172,7 @@ export default function CasesScreen() {
 
   return (
     <View style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <TabHero
         title={S.title}
         subtitle={S.subtitle}

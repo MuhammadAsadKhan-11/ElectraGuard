@@ -206,11 +206,22 @@ export default function SupportScreen(): React.ReactElement {
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <StackBar
         title="Help and support"
         subtitle="Answers, contacts, and energy tips"
-        onBack={() => router.back()}
+        onBack={() => router.navigate("/src/Consumer" as any)}
+        right={
+          <TouchableOpacity
+            onPress={() => router.push("/src/Consumer/ChatbotScreen" as any)}
+            style={styles.headerChatBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Open AI assistant chat"
+            hitSlop={8}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color="#0B3C5D" />
+          </TouchableOpacity>
+        }
       />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -564,6 +575,14 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
+  headerChatBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   // Chat hint
   chatBotHint: {
     backgroundColor: "#007AFF",

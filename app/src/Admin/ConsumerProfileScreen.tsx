@@ -149,7 +149,7 @@ export default function ConsumerProfileScreen() {
   if (loading && !data) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-        <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+        <StatusBar barStyle={colors.statusBar} />
         {renderHeader()}
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color={palette.primary} />
@@ -161,7 +161,7 @@ export default function ConsumerProfileScreen() {
   if (!data) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-        <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+        <StatusBar barStyle={colors.statusBar} />
         {renderHeader()}
         <View style={styles.centerBox}>
           <Text style={[styles.errorText, { color: colors.text }]}>
@@ -195,7 +195,7 @@ export default function ConsumerProfileScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+      <StatusBar barStyle={colors.statusBar} />
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pullRefresh} />}

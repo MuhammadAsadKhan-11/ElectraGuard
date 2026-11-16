@@ -117,7 +117,7 @@ export default function DetectionResultScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
 
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.navigate('/src/Consumer' as any)}>

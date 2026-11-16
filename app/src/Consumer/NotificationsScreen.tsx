@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   StatusBar,
@@ -52,6 +53,19 @@ export default function NotificationsScreen() {
   const S = getStrings(language).consumerNotifications;
   const { items, unread, loaded, error, refresh, refreshing, markRead, markAllRead } =
     useMyNotifications();
+
+  const [markingAll, setMarkingAll] = useState(false);
+  const readAll = async () => {
+    if (markingAll || unread === 0) return;
+    setMarkingAll(true);
+    try {
+      await markAllRead();
+    } catch (e: any) {
+      Alert.alert("Could not mark as read", e?.message || "Please check your connection and try again.");
+    } finally {
+      setMarkingAll(false);
+    }
+  };
   const [tab, setTab] = useState<"all" | "unread">("all");
 
   const shown = tab === "unread" ? items.filter((n) => !n.read) : items;
@@ -107,14 +121,14 @@ export default function NotificationsScreen() {
 
   return (
     <View style={[styles.safe, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <StackBar
         title={t.notifications ?? S.title}
         subtitle={unread > 0 ? S.unread(unread) : S.allCaughtUp}
         onBack={goBack}
         right={
-          <TouchableOpacity onPress={markAllRead} disabled={unread === 0} style={{ opacity: unread === 0 ? 0.45 : 1 }}>
-            <Text style={styles.markAllText}>{S.markAllRead}</Text>
+          <TouchableOpacity onPress={readAll} disabled={unread === 0 || markingAll} style={{ opacity: unread === 0 ? 0.45 : 1 }}>
+            <Text style={styles.markAllText}>{markingAll ? "Marking…" : S.markAllRead}</Text>
           </TouchableOpacity>
         }
       />

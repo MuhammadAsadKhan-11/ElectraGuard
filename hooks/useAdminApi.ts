@@ -409,12 +409,15 @@ export async function markNotificationsRead(ids: string[]): Promise<void> {
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
-  setNState({ items: nState.items.map((n) => ({ ...n, read: true })), unread: 0 });
+  const before = { items: nState.items, unread: nState.unread };
+  setNState({ items: nState.items.map((n) => ({ ...n, read: true })), unread: 0, error: null });
   try {
     await apiPost("/api/notifications/read", { markAll: true });
-  } finally {
-    refreshNotifications();
+  } catch (e: any) {
+    setNState({ ...before, error: e?.message ?? "Could not mark notifications as read" });
+    throw e;
   }
+  await refreshNotifications();
 }
 
 export function useNotifications() {

@@ -1,8 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-// expo-router 58 bundles its own React Navigation: the hook must come from expo-router
-// (the standalone @react-navigation/native one has no navigator here and crashes the screen).
-import { router, useNavigation } from "expo-router";
-import React, { useRef, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useRef, useState } from "react";
+import { BackHandler } from "react-native";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -190,7 +189,17 @@ const MessageBubble = ({ item }: { item: Message }) => {
    Main Screen
 ───────────────────────────────────────────────────────────── */
 export default function SupportChatScreen() {
-  const navigation = useNavigation();
+  // Chat is opened from Help & Support, so back (button or Android back key) returns there.
+  const goBackToSupport = useCallback(() => {
+    router.navigate("/src/Consumer/supportscreen" as any);
+    return true;
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener("hardwareBackPress", goBackToSupport);
+      return () => sub.remove();
+    }, [goBackToSupport]),
+  );
   const insets = useSafeAreaInsets();
 
   const [messages, setMessages] = useState<Message[]>([BOT_GREETING]);
@@ -262,13 +271,13 @@ export default function SupportChatScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
 
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => (navigation.canGoBack() ? navigation.goBack() : router.navigate("/src/Consumer" as any))}
+          onPress={goBackToSupport}
         >
           <Ionicons name="arrow-back" size={24} color={WHITE} />
         </TouchableOpacity>

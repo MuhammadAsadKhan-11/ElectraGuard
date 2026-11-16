@@ -27,6 +27,7 @@ import { Language, Theme } from "../../../constants/translations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../../../firebaseConfig";
 import { resetSessionStores, signOutEverywhere } from "../../../hooks/authSession";
+import TwoFactorSetting from "../../../components/TwoFactorSetting";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { useCasesList } from "../../../hooks/useCasesApi";
 
@@ -1122,11 +1123,7 @@ export default function ProfileScreen(): React.ReactElement {
             onPress={() => setShowPassModal(true)}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <MenuRow
-            icon="shield-checkmark-outline"
-            label={t.twoFactor}
-            subtitle={extra.enabled}
-          />
+          <TwoFactorSetting label={t.twoFactor} />
         </View>
 
         {/* About */}

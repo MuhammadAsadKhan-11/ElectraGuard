@@ -52,7 +52,7 @@ export default function ConsumerLayout() {
           title: "Home",
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
-              <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
+              <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color as string} />
             </View>
           ),
         }}
@@ -66,7 +66,7 @@ export default function ConsumerLayout() {
               <Ionicons
                 name={focused ? "document-text" : "document-text-outline"}
                 size={22}
-                color={color}
+                color={color as string}
               />
             </View>
           ),
@@ -78,7 +78,7 @@ export default function ConsumerLayout() {
           title: "Learn",
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
-              <Ionicons name={focused ? "bulb" : "bulb-outline"} size={22} color={color} />
+              <Ionicons name={focused ? "bulb" : "bulb-outline"} size={22} color={color as string} />
             </View>
           ),
         }}
@@ -89,7 +89,7 @@ export default function ConsumerLayout() {
           title: "Profile",
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
-              <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />
+              <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color as string} />
             </View>
           ),
         }}

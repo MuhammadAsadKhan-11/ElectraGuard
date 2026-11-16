@@ -196,6 +196,7 @@ async function markAllRead() {
     await apiPostJson("/api/consumers/me/notifications/mark-read", { markAll: true });
   } catch (e: any) {
     setState({ items: before, error: e?.message || "Could not update notifications" });
+    throw e;
   }
 }
 

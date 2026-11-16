@@ -276,7 +276,7 @@ export default function ReportScreen() {
   // ─── Render ───────────────────────────────────────────────────
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B3C5D" />
+      <StatusBar barStyle="light-content" />
       <TabHero
         title="Report theft"
         subtitle={
