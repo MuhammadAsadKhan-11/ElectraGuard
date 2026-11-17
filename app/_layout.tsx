@@ -9,12 +9,9 @@ import {
   Poppins_700Bold,
   useFonts,
 } from '@expo-google-fonts/poppins';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router, Stack } from 'expo-router';
-import { isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
-import React, { useEffect } from 'react';
-import { ActivityIndicator, I18nManager, Linking, View } from 'react-native';
-import { auth } from '../firebaseConfig';
+import { Stack } from 'expo-router';
+import React from 'react';
+import { ActivityIndicator, I18nManager, View } from 'react-native';
 import { AppSettingsProvider } from '../hooks/AppSettingContext';
 
 export { ErrorBoundary } from 'expo-router';
@@ -40,30 +37,6 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
   });
-
-  useEffect(() => {
-    const handleMagicLink = async (url: string) => {
-      if (isSignInWithEmailLink(auth, url)) {
-        try {
-          const email = await AsyncStorage.getItem('adminEmailForLink');
-          if (email) {
-            await signInWithEmailLink(auth, email, url);
-            await AsyncStorage.removeItem('adminEmailForLink');
-            router.replace('/src/Admin');
-          }
-        } catch (e) {
-          console.error('Magic link error:', e);
-        }
-      }
-    };
-
-    Linking.getInitialURL().then((url) => {
-      if (url) handleMagicLink(url);
-    });
-
-    const sub = Linking.addEventListener('url', ({ url }) => handleMagicLink(url));
-    return () => sub.remove();
-  }, []);
 
   if (!fontsLoaded) {
     return (

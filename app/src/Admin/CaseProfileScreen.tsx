@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 // app/src/Admin/CaseProfileScreen.tsx
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -317,7 +318,7 @@ export default function CaseProfileScreen() {
         {/* Header */}
         <View style={[styles.header, { backgroundColor: colors.card }]}>
           <TouchableOpacity onPress={goBack} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={styles.backArrow}>←</Text>
+            <Ionicons name="chevron-back" size={24} color={Colors.primary} />
           </TouchableOpacity>
           <View style={styles.headerInfo}>
             <Text style={[styles.caseNumber, { color: colors.text }]}>{caseItem.caseNumber}</Text>
@@ -430,7 +431,7 @@ export default function CaseProfileScreen() {
                   {downloading === ev.id ? (
                     <ActivityIndicator size="small" color={Colors.primary} />
                   ) : (
-                    <Text style={styles.downloadText}>⬇</Text>
+                    <Ionicons name="download-outline" size={20} color={Colors.primary} />
                   )}
                 </TouchableOpacity>
               </TouchableOpacity>

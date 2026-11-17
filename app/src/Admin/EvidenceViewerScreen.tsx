@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 // app/src/Admin/EvidenceViewerScreen.tsx
 // Case Profile ke Evidence list mein kisi item par tap karne se yeh screen khulti hai.
 // S3 evidence: a short-lived presigned URL is requested from the backend
@@ -91,13 +92,13 @@ export default function EvidenceViewerScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { backgroundColor: colors.card }]}>
         <TouchableOpacity onPress={goBack} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={styles.backArrow}>←</Text>
+          <Ionicons name="chevron-back" size={24} color={Colors.primary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
           {name || "Evidence"}
         </Text>
         <TouchableOpacity onPress={() => openExternally("download")} style={styles.backBtn} disabled={!fetcher || busy}>
-          {busy ? <ActivityIndicator size="small" color={Colors.primary} /> : <Text style={styles.backArrow}>⬇</Text>}
+          {busy ? <ActivityIndicator size="small" color={Colors.primary} /> : <Ionicons name="download-outline" size={22} color={Colors.primary} />}
         </TouchableOpacity>
       </View>
 

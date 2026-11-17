@@ -3,7 +3,7 @@
 // Base URL: constants/api.ts (EXPO_PUBLIC_API_URL, then the deployed admin API).
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { API_BASE_URL } from "../constants/api";
 import { auth, db } from "../firebaseConfig";
 import { ApiError as ClientApiError, apiFetch, getAuthToken } from "./apiClient";
@@ -357,7 +357,7 @@ let nQueued = false;
 
 const setNState = (patch: Partial<NState>) => {
   nState = { ...nState, ...patch };
-  nSubs.forEach((fn) => fn());
+  nRenderSubs.forEach((fn) => fn());
 };
 
 // Logout / account switch: forget the previous admin's notifications and any
@@ -372,16 +372,33 @@ onSessionReset(() => {
   }
 });
 
+// Bumped by every read action: a fetch that started before it carries stale
+// read/unread flags, so its result is thrown away and the fetch is redone.
+let nGen = 0;
+
 export async function refreshNotifications(): Promise<void> {
-  if (!auth.currentUser) return;
+  try {
+    await auth.authStateReady(); // after an app reload the session is restored asynchronously
+  } catch {
+    // ignore
+  }
+  if (!auth.currentUser) {
+    setNState({ loaded: true });
+    return;
+  }
   if (nFetching) {
     nQueued = true; // fetch ke dauran naya event aaya => ek aur baar fetch
     return;
   }
   nFetching = true;
+  const gen = nGen;
   try {
     const res = await apiGet<NotificationsResponse>("/api/notifications", { limit: 50 });
-    setNState({ items: res.items, unread: res.unreadCount, loaded: true, error: null });
+    if (gen !== nGen) {
+      nQueued = true; // a read action happened meanwhile: this response is outdated
+    } else {
+      setNState({ items: res.items, unread: res.unreadCount, loaded: true, error: null });
+    }
   } catch (e: any) {
     setNState({ error: e?.message ?? "Request failed", loaded: true });
   } finally {
@@ -395,6 +412,7 @@ export async function refreshNotifications(): Promise<void> {
 
 export async function markNotificationsRead(ids: string[]): Promise<void> {
   if (!ids.length) return;
+  nGen += 1;
   const set = new Set(ids);
   const dec = nState.items.filter((n) => set.has(n.id) && !n.read).length;
   setNState({
@@ -404,11 +422,13 @@ export async function markNotificationsRead(ids: string[]): Promise<void> {
   try {
     await apiPost("/api/notifications/read", { ids });
   } finally {
+    nGen += 1;
     refreshNotifications();
   }
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
+  nGen += 1;
   const before = { items: nState.items, unread: nState.unread };
   setNState({ items: nState.items.map((n) => ({ ...n, read: true })), unread: 0, error: null });
   try {
@@ -417,14 +437,29 @@ export async function markAllNotificationsRead(): Promise<void> {
     setNState({ ...before, error: e?.message ?? "Could not mark notifications as read" });
     throw e;
   }
+  nGen += 1; // anything fetched before the server saved "read all" is outdated
   await refreshNotifications();
 }
 
+// Re-render subscription (useSyncExternalStore). Kept separate from the
+// lifecycle counter below, which starts/stops the live listeners.
+const nRenderSubs = new Set<() => void>();
+const subscribeNState = (fn: () => void) => {
+  nRenderSubs.add(fn);
+  return () => {
+    nRenderSubs.delete(fn);
+  };
+};
+const getNState = () => nState;
+
 export function useNotifications() {
-  const [, force] = useState(0);
+  // useSyncExternalStore (not a force-update counter): the React Compiler used by
+  // this project memoised the old pattern, so screens kept showing stale
+  // unread/loading values after "Read all" or a reload.
+  const snap = useSyncExternalStore(subscribeNState, getNState, getNState);
 
   useEffect(() => {
-    const fn = () => force((n) => n + 1);
+    const fn = () => {};
     nSubs.add(fn);
     if (nSubs.size === 1) {
       nUnsubLive = subscribeLive(refreshNotifications);
@@ -455,10 +490,10 @@ export function useNotifications() {
   }, []);
 
   return {
-    items: nState.items,
-    unread: nState.unread,
-    loaded: nState.loaded,
-    error: nState.error,
+    items: snap.items,
+    unread: snap.unread,
+    loaded: snap.loaded,
+    error: snap.error,
     refresh: refreshNotifications,
     markRead: markNotificationsRead,
     markAllRead: markAllNotificationsRead,

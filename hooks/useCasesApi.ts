@@ -191,7 +191,7 @@ interface PickedFile {
   mimeType?: string;
 }
 
-async function buildFormData(fields: Record<string, string>, files: PickedFile[]) {
+export async function buildFormData(fields: Record<string, string>, files: PickedFile[]) {
   const fd = new FormData();
   Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
   for (const f of files) {
@@ -334,4 +334,26 @@ export function useInspectors() {
   }, []);
 
   return { inspectors, loading };
+}
+
+// ── Consumer: file a report with an optional photo (Report screen) ──
+// The backend stores the photo in the evidence storage and saves the case only
+// if the photo was stored, so a report is never "submitted" without its photo.
+export async function fileConsumerReport(
+  report: {
+    issueType: string;
+    issueValue: string;
+    description: string;
+    location: string;
+    urgency: string;
+  },
+  photo: PickedFile | null,
+  onProgress?: (fraction: number) => void,
+) {
+  const fd = await buildFormData(report, photo ? [photo] : []);
+  return uploadWithProgress<{ id: string; caseNumber: string; evidence: unknown[] }>(
+    "/api/consumers/me/cases",
+    fd,
+    onProgress,
+  );
 }

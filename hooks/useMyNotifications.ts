@@ -7,7 +7,7 @@
 // - Cleared on logout / account switch so one consumer never sees another's items.
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { auth, db } from "../firebaseConfig";
 import { apiFetch, apiPostJson } from "./apiClient";
 import { onSessionReset } from "./authSession";
@@ -59,7 +59,7 @@ let unsubAuth: (() => void) | null = null;
 let unsubSnap: (() => void) | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-const emit = () => subs.forEach((fn) => fn());
+const emit = () => renderSubs.forEach((fn) => fn());
 const setState = (patch: Partial<NState>) => {
   state = { ...state, ...patch };
   emit();
@@ -200,11 +200,21 @@ async function markAllRead() {
   }
 }
 
+const renderSubs = new Set<() => void>();
+const subscribeState = (fn: () => void) => {
+  renderSubs.add(fn);
+  return () => {
+    renderSubs.delete(fn);
+  };
+};
+const getState = () => state;
+
 export function useMyNotifications() {
-  const [, force] = useState(0);
+  // useSyncExternalStore keeps the React Compiler from memoising stale values.
+  const snap = useSyncExternalStore(subscribeState, getState, getState);
 
   useEffect(() => {
-    const fn = () => force((n) => n + 1);
+    const fn = () => {};
     subs.add(fn);
     if (subs.size === 1) start();
     return () => {
@@ -214,17 +224,17 @@ export function useMyNotifications() {
   }, []);
 
   const mark = useCallback((ids: string[]) => markRead(ids), []);
-  const unread = state.items.filter((n) => !n.read).length;
+  const unread = snap.items.filter((n) => !n.read).length;
 
   return {
-    items: state.items,
+    items: snap.items,
     unread,
-    loaded: state.loaded,
-    error: state.error,
+    loaded: snap.loaded,
+    error: snap.error,
     refresh: loadFromApi,
-    refreshing: state.refreshing,
+    refreshing: snap.refreshing,
     markRead: mark,
     markAllRead,
-    getById: (id: string) => state.items.find((n) => n.id === id),
+    getById: (id: string) => snap.items.find((n) => n.id === id),
   };
 }

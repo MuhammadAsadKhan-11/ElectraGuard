@@ -12,7 +12,17 @@ import {
 } from "react-native";
 import { auth } from "../../../firebaseConfig";
 import { ApiError } from "../../../hooks/apiClient";
-import { PortalRole, requestLoginOtp, signOutEverywhere, verifyLoginOtp } from "../../../hooks/authSession";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import {
+  PortalRole,
+  completeRegistration,
+  getPendingRegistration,
+  requestLoginOtp,
+  requestRegistrationCode,
+  setPendingRegistration,
+  signOutEverywhere,
+  verifyLoginOtp,
+} from "../../../hooks/authSession";
 
 // The user is already signed in with their password here; the backend only
 // accepts their API calls after this code is verified for this sign-in.
@@ -22,7 +32,10 @@ export default function LoginOTPScreen() {
     role: string;
     expiresIn?: string;
     resendIn?: string;
+    mode?: string;
   }>();
+  // "register": new consumer, account is created after the code is verified.
+  const isRegister = params.mode === "register";
 
   const email = params.email ?? "";
   const role: PortalRole = String(params.role).toLowerCase() === "admin" ? "admin" : "consumer";
@@ -47,8 +60,8 @@ export default function LoginOTPScreen() {
   };
 
   useEffect(() => {
-    // No signed-in user means this screen was opened directly: go back to login.
-    if (!auth.currentUser) {
+    // Nothing to verify (opened directly / app restarted): go back.
+    if (isRegister ? !getPendingRegistration() : !auth.currentUser) {
       router.replace("/src/screens/LoginScreen");
       return;
     }
@@ -68,7 +81,8 @@ export default function LoginOTPScreen() {
     setResendLoading(true);
     setError("");
     try {
-      const res = await requestLoginOtp(role, true);
+      const pending = getPendingRegistration();
+      const res = isRegister && pending ? await requestRegistrationCode(pending, true) : await requestLoginOtp(role, true);
       setOtp("");
       setExpiresAt(Date.now() + (res.expiresIn ?? 600) * 1000);
       startCountdown(res.resendIn ?? 60);
@@ -94,6 +108,24 @@ export default function LoginOTPScreen() {
     setLoading(true);
     setError("");
     try {
+      if (isRegister) {
+        const pending = getPendingRegistration();
+        if (!pending) throw new Error("Please start the registration again.");
+        await completeRegistration(pending, pending.password, otp.trim());
+        setPendingRegistration(null);
+        // Account exists now: sign in normally (2FA is off for a new account).
+        await signInWithEmailAndPassword(auth, pending.email, pending.password);
+        const login = await requestLoginOtp("consumer");
+        if (login.required) {
+          router.replace({
+            pathname: "/src/screens/LoginOTPScreen",
+            params: { email: login.maskedEmail || pending.email, role: "consumer", expiresIn: String(login.expiresIn ?? 600), resendIn: String(login.resendIn ?? 60) },
+          });
+          return;
+        }
+        router.replace("/src/Consumer" as any);
+        return;
+      }
       const res = await verifyLoginOtp(otp.trim());
       router.replace((res.role === "admin" ? "/src/Admin" : "/src/Consumer") as any);
     } catch (err: any) {
@@ -106,7 +138,8 @@ export default function LoginOTPScreen() {
 
   const cancel = async () => {
     try {
-      await signOutEverywhere();
+      if (isRegister) setPendingRegistration(null);
+      else await signOutEverywhere();
     } finally {
       router.canGoBack() ? router.back() : router.replace("/src/screens/LoginScreen");
     }
@@ -114,7 +147,7 @@ export default function LoginOTPScreen() {
 
   return (
     <AuthScreen>
-      <Text style={styles.title}>Verify your email</Text>
+      <Text style={styles.title}>{isRegister ? "Confirm your email" : "Verify your email"}</Text>
       <Text style={styles.subtitle}>
         Enter the 6-digit code sent to{"\n"}
         <Text style={styles.emailHighlight}>{email}</Text>
@@ -165,7 +198,7 @@ export default function LoginOTPScreen() {
 
       <TouchableOpacity style={styles.backRow} onPress={cancel}>
         <Ionicons name="arrow-back" size={16} color="#111111" />
-        <Text style={styles.backText}>Back to sign in</Text>
+        <Text style={styles.backText}>{isRegister ? "Back to registration" : "Back to sign in"}</Text>
       </TouchableOpacity>
     </AuthScreen>
   );

@@ -30,6 +30,8 @@ import { resetSessionStores, signOutEverywhere } from "../../../hooks/authSessio
 import TwoFactorSetting from "../../../components/TwoFactorSetting";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { useCasesList } from "../../../hooks/useCasesApi";
+import { useNotifications } from "../../../hooks/useAdminApi";
+import { useAdminOverlay } from "../../../components/AdminOverlay";
 
 // Firestore collection where admin profiles live. Change if yours is different.
 const ADMIN_COLLECTION = "admins";
@@ -909,6 +911,11 @@ export default function ProfileScreen(): React.ReactElement {
 
   // Live stats from the same API the Cases screen uses
   const { counts: rawCounts, total: rawTotal } = useCasesList("All");
+  // Same notification store + panel as the bell icon (no second system).
+  const { unread: notifUnread, loaded: notifLoaded } = useNotifications();
+  const overlayApi = useAdminOverlay();
+  const openNotifications = () =>
+    overlayApi ? overlayApi.openNotifications() : router.push("/src/Admin/notifications" as any);
   const totalCases = rawTotal ?? 0;
   const resolvedCases = rawCounts?.Closed ?? 0;
   const successRate =
@@ -1103,8 +1110,8 @@ export default function ProfileScreen(): React.ReactElement {
           <MenuRow
             icon="notifications-outline"
             label={t.notifications}
-            subtitle={extra.enabled}
-            onPress={() => Alert.alert(t.notifTitle, t.notifBody, [{ text: t.ok }])}
+            subtitle={!notifLoaded ? "Loading…" : notifUnread > 0 ? `${notifUnread} unread` : "All caught up"}
+            onPress={openNotifications}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <MenuRow

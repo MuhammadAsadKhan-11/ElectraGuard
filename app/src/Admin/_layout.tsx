@@ -60,6 +60,7 @@ function AdminShell() {
   return (
     <View style={styles.shell}>
     <Tabs
+      backBehavior="history"
       screenListeners={{
         tabPress: () => overlayApi?.close(),
       }}

@@ -194,7 +194,8 @@ export default function CreateCaseScreen(props?: {
       props.onClose();
       return;
     }
-    router.replace("/src/Admin/CasesScreen" as any);
+    if (router.canGoBack()) router.back();
+    else router.replace("/src/Admin/CasesScreen" as any);
   };
 
   const pickImage = async () => {
@@ -308,8 +309,8 @@ export default function CreateCaseScreen(props?: {
           contentContainerStyle={{ paddingBottom: 40 }}
         >
           <View style={[styles.header, { backgroundColor: colors?.card ?? Colors.white }]}>
-            <TouchableOpacity onPress={goBack} style={styles.markBtn} activeOpacity={0.8}>
-              <Ionicons name="folder-open-outline" size={18} color="#FFFFFF" />
+            <TouchableOpacity onPress={goBack} style={styles.markBtn} activeOpacity={0.8} accessibilityLabel="Back">
+              <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: colors?.text ?? Colors.text }]}>
               {S.title}

@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 // app/src/Admin/ConsumerProfileScreen.tsx
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
@@ -140,7 +141,7 @@ export default function ConsumerProfileScreen() {
   const renderHeader = (children?: React.ReactNode) => (
     <View style={[styles.header, { backgroundColor: colors.card }]}>
       <TouchableOpacity onPress={goBack} style={styles.backBtn}>
-        <Text style={styles.backArrow}>←</Text>
+        <Ionicons name="chevron-back" size={24} color={palette.primary} />
       </TouchableOpacity>
       {children}
     </View>

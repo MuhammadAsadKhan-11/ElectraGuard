@@ -1,16 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { AuthField, AuthScreen, NAVY } from "../../../components/AuthChrome";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-} from "firebase/firestore";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -20,8 +10,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { auth, db } from "../../../firebaseConfig";
-import { requestLoginOtp, signOutEverywhere } from "../../../hooks/authSession";
+import { ApiError } from "../../../hooks/apiClient";
+import { requestRegistrationCode, setPendingRegistration } from "../../../hooks/authSession";
 
 // The verification email (OTP) is sent by the backend; no EmailJS keys in the app.
 
@@ -137,127 +127,37 @@ export default function RegisterScreen() {
     if (!validateForm()) return;
     setLoading(true);
     try {
-      // ── Step 1: Duplicate email check ─────────────────────────────────────────
-      // Friendly message only; Firebase Auth rejects duplicate emails anyway, so
-      // a permission error (locked-down rules) just skips this check.
-      let emailSnap: Awaited<ReturnType<typeof getDocs>> | null = null;
-      try {
-        emailSnap = await getDocs(
-          query(collection(db, "consumers"), where("email", "==", form.email)),
-        );
-      } catch {
-        emailSnap = null;
-      }
-      if (emailSnap && !emailSnap.empty) {
-        const existingDoc = emailSnap.docs[0].data() as Record<string, any>;
-        const allMatch =
-          existingDoc.fullName === form.fullName &&
-          existingDoc.consumerId === form.consumerId &&
-          existingDoc.cnicNumber === form.cnicNumber &&
-          existingDoc.mobileNumber === form.mobileNumber;
-        Alert.alert(
-          allMatch ? "Account Already Exists" : "Email Already In Use",
-          allMatch
-            ? "All your credentials already exist. Please login instead."
-            : "This email is already registered with a different account.",
-          allMatch
-            ? [
-                {
-                  text: "Go to Login",
-                  onPress: () => router.replace("/src/screens/LoginScreen"),
-                },
-                { text: "Cancel", style: "cancel" },
-              ]
-            : [{ text: "OK", style: "cancel" }],
-        );
-        setLoading(false);
-        return;
-      }
+      // 1. Backend validates the details (email / Consumer ID not already used)
+      //    and emails a 6-digit code. No account is created yet.
+      const details = {
+        fullName: form.fullName.trim(),
+        consumerId: form.consumerId.trim(),
+        cnicNumber: form.cnicNumber.trim(),
+        email: form.email.trim(),
+        mobileNumber: form.mobileNumber.trim(),
+      };
+      const otpInfo = await requestRegistrationCode(details);
+      setPendingRegistration({ ...details, password: form.password });
 
-      // ── Step 2: Create Firebase Auth user ─────────────────────────────────────
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        form.email,
-        form.password,
-      );
-      const user = userCredential.user;
-
-      // ── Step 4: Save consumer to Firestore ────────────────────────────────────
-      // FIX: Never store passwords or base64-encoded passwords in Firestore.
-      // Firebase Auth handles password storage securely.
-      await setDoc(doc(db, "consumers", user.uid), {
-        uid: user.uid,
-        fullName: form.fullName,
-        consumerId: form.consumerId,
-        cnicNumber: form.cnicNumber,
-        email: form.email,
-        mobileNumber: form.mobileNumber,
-        role: "consumer",
-        isVerified: false,
-        lastVerifiedAt: null,
-        createdAt: serverTimestamp(),
-      });
-
-      // ── Step 3: Email verification code (backend + EmailJS) ───────────────────
-      let otpInfo;
-      try {
-        otpInfo = await requestLoginOtp("consumer");
-      } catch (emailErr: any) {
-        await signOutEverywhere();
-        Alert.alert(
-          "Account Created",
-          `${emailErr?.message || "We could not send the verification code."} Your account was created; sign in to receive a new code.`,
-          [{ text: "Go to Login", onPress: () => router.replace("/src/screens/LoginScreen") }],
-        );
-        setLoading(false);
-        return;
-      }
-
-      // ── Step 4: Navigate to OTP screen ───────────────────────────────────────
+      // 2. Same OTP screen as login; the account is created after the code is verified.
       router.push({
         pathname: "/src/screens/LoginOTPScreen",
         params: {
-          email: otpInfo.maskedEmail || form.email,
+          mode: "register",
+          email: otpInfo.maskedEmail || details.email,
           role: "consumer",
           expiresIn: String(otpInfo.expiresIn ?? 600),
           resendIn: String(otpInfo.resendIn ?? 60),
         },
       });
     } catch (error: any) {
-      switch (error.code) {
-        case "auth/email-already-in-use":
-          Alert.alert(
-            "Email Already In Use",
-            "This email is already linked to an account.",
-            [
-              {
-                text: "Go to Login",
-                onPress: () => router.replace("/src/screens/LoginScreen"),
-              },
-              { text: "Cancel", style: "cancel" },
-            ],
-          );
-          break;
-        case "auth/invalid-email":
-          Alert.alert("Invalid Email", "Please enter a valid email address.");
-          break;
-        case "auth/weak-password":
-          Alert.alert(
-            "Weak Password",
-            "Password must be at least 6 characters.",
-          );
-          break;
-        case "auth/network-request-failed":
-          Alert.alert(
-            "Network Error",
-            "Please check your internet connection.",
-          );
-          break;
-        default:
-          Alert.alert(
-            "Registration Failed",
-            error.message || "Something went wrong.",
-          );
+      if (error instanceof ApiError && error.status === 409) {
+        Alert.alert("Already Registered", error.message, [
+          { text: "Go to Login", onPress: () => router.replace("/src/screens/LoginScreen") },
+          { text: "Cancel", style: "cancel" },
+        ]);
+      } else {
+        Alert.alert("Registration Failed", error?.message || "Something went wrong.");
       }
     } finally {
       setLoading(false);

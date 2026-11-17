@@ -71,17 +71,28 @@ export default function NotificationsScreen(props?: { onClose?: () => void }) {
       props.onClose();
       return;
     }
-    router.replace("/src/Admin/CasesScreen" as any);
+    if (router.canGoBack()) router.back();
+    else router.replace("/src/Admin" as any);
   };
 
   const openItem = (n: AppNotification) => {
-    if (!n.read) markRead([n.id]);
-    if (n.consumerKey) {
-      router.push({
-        pathname: "/src/Admin/ConsumerProfileScreen",
-        params: { id: n.consumerKey },
-      } as any);
+    if (!n.read) markRead([n.id]).catch(() => {});
+    if (!n.caseId && !n.consumerKey) return;
+    // Opened as an overlay (bell / Profile): close it first so the target screen is visible.
+    props?.onClose?.();
+    if (n.caseId) {
+      router.push({ pathname: "/src/Admin/CaseProfileScreen", params: { caseId: n.caseId } } as any);
+    } else {
+      router.push({ pathname: "/src/Admin/ConsumerProfileScreen", params: { id: n.consumerKey } } as any);
     }
+  };
+
+  const fullTime = (iso: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return isNaN(d.getTime())
+      ? ""
+      : d.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
   };
 
   const renderItem = ({ item: n }: { item: AppNotification }) => {
@@ -91,7 +102,7 @@ export default function NotificationsScreen(props?: { onClose?: () => void }) {
         style={[
           styles.item,
           { backgroundColor: colors.card, borderLeftColor: color },
-          !n.read && styles.itemUnread,
+          n.read ? styles.itemRead : styles.itemUnread,
         ]}
         onPress={() => openItem(n)}
         activeOpacity={0.8}
@@ -115,10 +126,16 @@ export default function NotificationsScreen(props?: { onClose?: () => void }) {
               {n.message}
             </Text>
           )}
-          <Text style={[styles.itemTime, { color: colors.subText }]}>
-            {timeAgo(n.createdAt)}
-            {n.consumerKey ? "  •  Tap to open profile" : ""}
-          </Text>
+          <View style={styles.metaRow}>
+            <Text style={[styles.itemTime, { color: colors.subText, flex: 1 }]} numberOfLines={1}>
+              {timeAgo(n.createdAt)}
+              {fullTime(n.createdAt) ? `  •  ${fullTime(n.createdAt)}` : ""}
+              {n.caseId ? `  •  ${n.caseId}` : n.consumerName ? `  •  ${n.consumerName}` : ""}
+            </Text>
+            <View style={[styles.statePill, n.read ? styles.statePillRead : { backgroundColor: color + "22" }]}>
+              <Text style={[styles.statePillText, { color: n.read ? "#8E8E93" : color }]}>{n.read ? "Read" : "Unread"}</Text>
+            </View>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -251,12 +268,17 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   itemUnread: { shadowOpacity: 0.12, elevation: 4 },
+  itemRead: { opacity: 0.7 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
+  statePill: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  statePillRead: { backgroundColor: "#8E8E9322" },
+  statePillText: { fontSize: 10, fontWeight: "700" },
   icon: { fontSize: 22, marginTop: 2 },
   titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   itemTitle: { flex: 1, fontSize: 14 },
   dot: { width: 9, height: 9, borderRadius: 5, marginTop: 5 },
   itemMsg: { fontSize: 12, marginTop: 3, lineHeight: 17 },
-  itemTime: { fontSize: 11, marginTop: 6 },
+  itemTime: { fontSize: 11 },
 
   center: { alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 24 },
   emptyIcon: { fontSize: 40, marginBottom: 10 },

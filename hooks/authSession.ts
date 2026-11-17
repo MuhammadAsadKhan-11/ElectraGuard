@@ -105,3 +105,32 @@ export async function confirmTwoFactorChange(enable: boolean, code: string): Pro
   const deviceId = await getDeviceId();
   return apiPostJson("/api/auth/2fa/confirm", { enable, code, deviceId });
 }
+
+// ── Registration: code is emailed BEFORE the account exists ──────────
+export interface RegistrationDetails {
+  fullName: string;
+  consumerId: string;
+  cnicNumber: string;
+  email: string;
+  mobileNumber: string;
+}
+
+// Kept in memory only (never in route params or storage) between the
+// Register screen and the OTP screen.
+let pendingRegistration: (RegistrationDetails & { password: string }) | null = null;
+export const setPendingRegistration = (p: (RegistrationDetails & { password: string }) | null) => {
+  pendingRegistration = p;
+};
+export const getPendingRegistration = () => pendingRegistration;
+
+export function requestRegistrationCode(details: RegistrationDetails, resend = false): Promise<OtpRequestResult> {
+  return apiPostJson<OtpRequestResult>("/api/auth/register/request", { ...details, resend }, { auth: false });
+}
+
+export function completeRegistration(
+  details: RegistrationDetails,
+  password: string,
+  code: string,
+): Promise<{ created: boolean; email: string }> {
+  return apiPostJson("/api/auth/register/verify", { ...details, password, code }, { auth: false });
+}

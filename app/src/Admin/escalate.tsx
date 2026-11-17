@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 // app/src/Admin/escalate.tsx
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -227,7 +228,7 @@ export default function EscalateCaseScreen() {
       <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={[styles.header, { backgroundColor: colors.card }]}>
           <TouchableOpacity onPress={goBack} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Text style={styles.backArrow}>←</Text>
+            <Ionicons name="chevron-back" size={24} color={Colors.primary} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>{S.title}</Text>
           <View style={{ width: 40 }} />

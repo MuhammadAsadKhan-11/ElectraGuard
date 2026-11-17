@@ -1,8 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { onAuthStateChanged } from "firebase/auth";
-import { addDoc, collection, doc, getDoc, getDocs, orderBy, query, where } from "firebase/firestore";
-import { getDownloadURL, ref, uploadString } from "firebase/storage";
+import { collection, doc, getDoc, getDocs, orderBy, query, where } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -20,7 +19,15 @@ import {
 } from "react-native";
 import { TabHero } from "../../../components/AppChrome";
 import ConsumerBell from "../../../components/ConsumerBell";
-import { auth, db, storage } from "../../../firebaseConfig";
+import { auth, db } from "../../../firebaseConfig";
+import { EVIDENCE_MAX_MB, fileConsumerReport } from "../../../hooks/useCasesApi";
+
+interface PickedPhoto {
+  uri: string;
+  name: string;
+  mimeType: string;
+  size?: number | null;
+}
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import { IssueType, ReportDisplayItem } from "../../../types/report.types"; // ← imported
 
@@ -50,7 +57,8 @@ export default function ReportScreen() {
   const [description, setDescription] = useState("");
   const [meterLocation, setMeterLocation] = useState("");
   const [urgency, setUrgency] = useState<"Low" | "Medium" | "High">("Low");
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<PickedPhoto | null>(null);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
 
   // Loading states
@@ -138,18 +146,22 @@ export default function ReportScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsEditing: true,
-      quality: 0.5,
-      base64: true,
+      quality: 0.7, // re-encodes to JPEG and keeps photos small
     });
-    if (!result.canceled && result.assets[0].base64) {
-      setSelectedImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
+    if (result.canceled || !result.assets?.[0]) return;
+    const a = result.assets[0];
+    if (a.fileSize && a.fileSize > EVIDENCE_MAX_MB * 1024 * 1024) {
+      Alert.alert("Photo too large", `Please choose a photo smaller than ${EVIDENCE_MAX_MB} MB.`);
+      return;
     }
-  };
-
-  // ── Generate reference ID ──────────────────────────────────────
-  const generateRefId = () => {
-    const num = Math.floor(1000 + Math.random() * 9000);
-    return `RPT-${num}`;
+    const mime = a.mimeType || "image/jpeg";
+    const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : mime.includes("heic") ? "heic" : "jpg";
+    setSelectedImage({
+      uri: a.uri,
+      name: a.fileName && /\.(jpe?g|png|webp|heic)$/i.test(a.fileName) ? a.fileName : `report_${Date.now()}.${ext}`,
+      mimeType: mime,
+      size: a.fileSize,
+    });
   };
 
   // ── Submit Report → saves to "cases" collection ───────────────
@@ -172,73 +184,25 @@ export default function ReportScreen() {
     }
 
     setSubmitting(true);
+    setUploadPct(selectedImage ? 0 : null);
     try {
-      const referenceId = generateRefId();
-      const uid = consumer.uid || auth.currentUser?.uid || "consumer";
-      const now = new Date();
-      let imageUrl = "";
-      if (selectedImage) {
-        try {
-          const imageRef = ref(
-            storage,
-            `case_evidence/reports/${uid}_${now.getTime()}.jpg`,
-          );
-          await uploadString(imageRef, selectedImage, "data_url");
-          imageUrl = await getDownloadURL(imageRef);
-        } catch {
-          imageUrl = "";
-        }
-      }
-
-      await addDoc(collection(db, "cases"), {
-        caseId: referenceId,
-        consumerId: consumer.consumerId,
-        consumerDocId: uid,
-        uid,
-        consumerName: consumer.fullName,
-        consumerEmail: consumer.email,
-        issueType: selectedIssue.label,
-        issueValue: selectedIssue.value,
-        category: selectedIssue.label,
-        description: description.trim(),
-        location: meterLocation.trim(),
-        area: meterLocation.trim(),
-        riskLevel: urgency,
-        priority: urgency === "High" ? "High" : "Normal",
-        currentStatus: "Under Investigation",
-        status: "In Progress",
-        assignedInspector: "",
-        escalated: false,
-        hasImage: Boolean(imageUrl),
-        evidence: imageUrl
-          ? [
-              {
-                name: "report.jpg",
-                type: "image",
-                url: imageUrl,
-                uploadedBy: consumer.fullName,
-                date: now.toISOString().slice(0, 10),
-              },
-            ]
-          : [],
-        resolution: "",
-        timeline: [
-          {
-            action: "Report submitted by consumer",
-            date: now.toISOString().slice(0, 10),
-            time: now.toTimeString().slice(0, 5),
-          },
-        ],
-        createdAt: now,
-        updatedAt: now,
-        createdBy: uid,
-      });
+      // Backend saves the case AND the photo (evidence storage). If the photo
+      // cannot be stored, the case is not created and the error is shown.
+      const created = await fileConsumerReport(
+        {
+          issueType: selectedIssue.label,
+          issueValue: selectedIssue.value,
+          description: description.trim(),
+          location: meterLocation.trim(),
+          urgency,
+        },
+        selectedImage,
+        selectedImage ? (f) => setUploadPct(f) : undefined,
+      );
 
       Alert.alert(
         "Report Submitted",
-        selectedImage && !imageUrl
-          ? `Your reference ID is ${referenceId}. The report was saved, but the photo could not be uploaded.`
-          : `Your reference ID is ${referenceId}. We will contact you within 24–48 hours.`,
+        `Your reference ID is ${created.caseNumber}.${selectedImage ? " Your photo was saved with the report." : ""} We will contact you within 24–48 hours.`,
       );
 
       // Reset form
@@ -251,9 +215,13 @@ export default function ReportScreen() {
       // Refresh list
       await fetchPreviousReports(consumer.consumerId);
     } catch (e: any) {
-      Alert.alert("Error", e.message || "Failed to submit report.");
+      Alert.alert(
+        selectedImage ? "Report not submitted" : "Error",
+        `${e?.message || "Failed to submit report."}${selectedImage ? "\n\nYour report was not saved. Please try again, or remove the photo." : ""}`,
+      );
     } finally {
       setSubmitting(false);
+      setUploadPct(null);
     }
   };
 
@@ -383,7 +351,7 @@ export default function ReportScreen() {
             {selectedImage ? (
               <View style={styles.imagePreviewWrapper}>
                 <Image
-                  source={{ uri: selectedImage }}
+                  source={{ uri: selectedImage.uri }}
                   style={styles.imagePreview}
                 />
                 <Text style={styles.imageChangeTxt}>Tap to change</Text>
@@ -394,7 +362,7 @@ export default function ReportScreen() {
                 <Text style={styles.imageUploadTitle}>
                   Take or upload photo of the issue
                 </Text>
-                <Text style={styles.imageUploadSub}>Supports JPG, PNG</Text>
+                <Text style={styles.imageUploadSub}>JPG, PNG, WEBP · max {EVIDENCE_MAX_MB} MB</Text>
                 <View style={styles.selectImgBtn}>
                   <Ionicons name="image-outline" size={14} color="#FFFFFF" />
                   <Text style={styles.selectImgBtnText}>Select Image</Text>
@@ -411,7 +379,12 @@ export default function ReportScreen() {
             activeOpacity={0.85}
           >
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <ActivityIndicator color="#FFFFFF" />
+                {uploadPct !== null && uploadPct < 1 && (
+                  <Text style={{ color: "#FFFFFF", fontWeight: "600" }}>Uploading photo {Math.round(uploadPct * 100)}%</Text>
+                )}
+              </View>
             ) : (
               <>
                 <Ionicons

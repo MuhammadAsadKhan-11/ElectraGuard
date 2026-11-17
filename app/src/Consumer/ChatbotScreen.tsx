@@ -278,6 +278,8 @@ export default function SupportChatScreen() {
         <TouchableOpacity
           style={styles.backBtn}
           onPress={goBackToSupport}
+          accessibilityRole="button"
+          accessibilityLabel="Back to help and support"
         >
           <Ionicons name="arrow-back" size={24} color={WHITE} />
         </TouchableOpacity>
