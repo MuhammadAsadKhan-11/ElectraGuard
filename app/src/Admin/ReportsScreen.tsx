@@ -22,6 +22,14 @@ import { TabHero } from "../../../components/AppChrome";
 import NotificationBell from "../../../components/NotificationBell";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import {
+  CONSUMPTION_CHART_COLORS,
+  CONSUMPTION_SERIES_LABELS,
+  RISK_COLORS,
+  RISK_LABELS,
+  RISK_LEVELS,
+  roundedPercents,
+} from "../../../constants/chartColors";
+import {
   fetchReportCsv,
   InsightType,
   ReportPeriod,
@@ -97,8 +105,8 @@ const BarChart: React.FC<{
   const slot = data.length ? plotW / data.length : plotW;
   const barW = Math.min(30, slot * 0.55);
 
-  if (data.length === 0) {
-    return <Text style={{ color: textColor, fontSize: 12 }}>No data for this period.</Text>;
+  if (data.length === 0 || data.every((d) => !(d.value > 0))) {
+    return <Text style={{ color: textColor, fontSize: 12 }}>No data available</Text>;
   }
 
   return (
@@ -131,6 +139,9 @@ const BarChart: React.FC<{
         return (
           <G key={`${d.label}-${i}`}>
             <Rect x={cx - barW / 2} y={y} width={barW} height={h} rx={3} fill={color} />
+            <SvgText x={cx} y={Math.max(PAD.top + 8, y - 4)} fontSize={9} fill={textColor} textAnchor="middle">
+              {formatTick(d.value)}
+            </SvgText>
             <SvgText
               x={cx + 4}
               y={ly}
@@ -149,20 +160,99 @@ const BarChart: React.FC<{
   );
 };
 
-const PIE_COLORS = { low: "#34C759", medium: "#FF9500", high: "#FF3B30" };
+type TrendPoint = { date: string; label: string; normal: number; theft: number };
+const SERIES = ["normal", "theft"] as const;
+
+const TrendChart: React.FC<{ points: TrendPoint[]; textColor: string; gridColor: string }> = ({
+  points,
+  textColor,
+  gridColor,
+}) => {
+  const W = CHART_WIDTH;
+  const H = 200;
+  const PAD = { left: 44, right: 8, top: 10, bottom: 28 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+  const clean = points.map((p) => ({
+    ...p,
+    normal: Number.isFinite(p.normal) ? Math.max(0, p.normal) : 0,
+    theft: Number.isFinite(p.theft) ? Math.max(0, p.theft) : 0,
+  }));
+  if (!clean.length || clean.every((p) => p.normal === 0 && p.theft === 0)) {
+    return <Text style={{ color: textColor, fontSize: 12 }}>No data available</Text>;
+  }
+  const { top, ticks } = niceScale(Math.max(...clean.flatMap((p) => [p.normal, p.theft])));
+  const x = (i: number) => PAD.left + (clean.length === 1 ? plotW / 2 : (plotW * i) / (clean.length - 1));
+  const y = (v: number) => PAD.top + plotH - (v / top) * plotH;
+  const labelEvery = Math.max(1, Math.ceil(clean.length / 6));
+  return (
+    <View>
+      <Svg width={W} height={H}>
+        {ticks.map((t) => (
+          <G key={t}>
+            <Line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} stroke={gridColor} strokeWidth={1} strokeDasharray="3,3" />
+            <SvgText x={PAD.left - 6} y={y(t) + 3} fontSize={9} fill={textColor} textAnchor="end">
+              {compact(t)}
+            </SvgText>
+          </G>
+        ))}
+        {SERIES.map((key) => (
+          <Path
+            key={key}
+            d={clean.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(p[key])}`).join(" ")}
+            stroke={CONSUMPTION_CHART_COLORS[key]}
+            strokeWidth={2}
+            fill="none"
+          />
+        ))}
+        {clean.length <= 31 &&
+          SERIES.map((key) =>
+            clean.map((p, i) => <Circle key={`${key}-${i}`} cx={x(i)} cy={y(p[key])} r={2.5} fill={CONSUMPTION_CHART_COLORS[key]} />),
+          )}
+        {clean.map((p, i) =>
+          i % labelEvery === 0 || i === clean.length - 1 ? (
+            <SvgText
+              key={`l-${i}`}
+              x={x(i)}
+              y={H - 10}
+              fontSize={9}
+              fill={textColor}
+              textAnchor={i === 0 ? "start" : i === clean.length - 1 ? "end" : "middle"}
+            >
+              {p.label}
+            </SvgText>
+          ) : null,
+        )}
+      </Svg>
+      <View style={styles.pieLegend}>
+        {SERIES.map((key) => (
+          <View key={key} style={styles.pieLegendItem}>
+            <View style={[styles.pieDot, { backgroundColor: CONSUMPTION_CHART_COLORS[key] }]} />
+            <Text style={[styles.pieLegendText, { color: textColor }]}>{CONSUMPTION_SERIES_LABELS[key]} (kWh)</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+};
 
 const RiskPie: React.FC<{
   low: number;
   medium: number;
   high: number;
+  unclassified?: number;
   textColor: string;
-}> = ({ low, medium, high, textColor }) => {
-  const slices = [
-    { label: "Low Risk", value: low, color: PIE_COLORS.low },
-    { label: "Medium Risk", value: medium, color: PIE_COLORS.medium },
-    { label: "High Risk", value: high, color: PIE_COLORS.high },
-  ];
-  const total = slices.reduce((s, x) => s + Math.max(0, x.value), 0);
+}> = ({ low, medium, high, unclassified = 0, textColor }) => {
+  const counts = { low: Math.max(0, low || 0), medium: Math.max(0, medium || 0), high: Math.max(0, high || 0) };
+  const pcts = roundedPercents(counts, RISK_LEVELS);
+  // Colors come from the category name (RISK_COLORS[level]), never from position.
+  const slices = RISK_LEVELS.map((level) => ({
+    level,
+    label: RISK_LABELS[level],
+    value: counts[level],
+    color: RISK_COLORS[level],
+  }));
+  const total = slices.reduce((sum, x) => sum + x.value, 0);
   const cx = 160;
   const cy = 90;
   const r = 60;
@@ -172,20 +262,23 @@ const RiskPie: React.FC<{
     return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
   };
 
-  let acc = 0;
-  const parts = slices.map((s) => {
-    const pct = total > 0 ? (Math.max(0, s.value) / total) * 100 : 0;
-    const start = (acc / 100) * 360;
-    acc += pct;
-    const end = (acc / 100) * 360;
-    return { ...s, pct, start, end };
+  const pctOf = (v: number) => (total > 0 ? (Math.max(0, v) / total) * 100 : 0);
+  const parts = slices.map((s, i) => {
+    const before = slices.slice(0, i).reduce((sum, x) => sum + pctOf(x.value), 0);
+    const pct = pctOf(s.value);
+    return { ...s, pct, start: (before / 100) * 360, end: ((before + pct) / 100) * 360 };
   });
 
   return (
     <View>
       <Svg width="100%" height={190} viewBox="0 0 320 190">
         {total === 0 ? (
-          <Circle cx={cx} cy={cy} r={r} fill="#E5E5EA" />
+          <G>
+            <Circle cx={cx} cy={cy} r={r} fill="#E5E5EA" />
+            <SvgText x={cx} y={cy + 4} fontSize={11} fill="#6B7280" textAnchor="middle">
+              No data available
+            </SvgText>
+          </G>
         ) : (
           parts.map((p) => {
             if (p.pct <= 0) return null;
@@ -217,19 +310,26 @@ const RiskPie: React.FC<{
               fill={textColor}
               textAnchor={anchor}
             >
-              {`${p.label} ${Math.round(p.pct)}%`}
+              {`${p.label} ${pcts[p.level]}%`}
             </SvgText>
           );
         })}
       </Svg>
       <View style={styles.pieLegend}>
-        {slices.map((s) => (
-          <View key={s.label} style={styles.pieLegendItem}>
-            <View style={[styles.pieDot, { backgroundColor: s.color }]} />
-            <Text style={[styles.pieLegendText, { color: textColor }]}>{s.label}</Text>
+        {slices.map((sl) => (
+          <View key={sl.level} style={styles.pieLegendItem}>
+            <View style={[styles.pieDot, { backgroundColor: sl.color }]} />
+            <Text style={[styles.pieLegendText, { color: textColor }]}>
+              {sl.label} · {sl.value} ({pcts[sl.level]}%)
+            </Text>
           </View>
         ))}
       </View>
+      {unclassified > 0 && (
+        <Text style={[styles.pieLegendText, { color: textColor, textAlign: "center", marginTop: 4 }]}>
+          {unclassified} record{unclassified === 1 ? "" : "s"} without a risk level (not counted)
+        </Text>
+      )}
     </View>
   );
 };
@@ -447,8 +547,15 @@ export default function ReportsScreen(): React.ReactElement {
                 low={data.riskDistribution.low}
                 medium={data.riskDistribution.medium}
                 high={data.riskDistribution.high}
+                unclassified={data.riskDistribution.unclassified ?? 0}
                 textColor={colors.subText}
               />
+            </View>
+
+            {/* Theft vs normal consumption */}
+            <View style={[styles.chartCard, { backgroundColor: colors.card }]}>
+              <Text style={[styles.chartTitle, { color: colors.text }]}>Theft vs Normal Consumption</Text>
+              <TrendChart points={data.consumptionTrend ?? []} textColor={colors.subText} gridColor={gridColor} />
             </View>
 
             {/* Area-wise theft */}
@@ -632,7 +739,7 @@ const styles = StyleSheet.create({
   },
   chartTitle: { fontSize: 15, fontWeight: "800", marginBottom: 12 },
 
-  pieLegend: { flexDirection: "row", justifyContent: "center", gap: 16, marginTop: 6 },
+  pieLegend: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12, marginTop: 6 },
   pieLegendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   pieDot: { width: 8, height: 8, borderRadius: 4 },
   pieLegendText: { fontSize: 11 },

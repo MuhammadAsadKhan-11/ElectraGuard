@@ -5,6 +5,7 @@
 // Every module that caches per-account data registers a reset function here,
 // so switching Consumer <-> Admin never shows (or reuses) the previous account's state.
 import { signOut } from "firebase/auth";
+import { API_BASE_URL } from "../constants/api";
 import { auth } from "../firebaseConfig";
 import { apiFetch, apiPostJson, getDeviceId } from "./apiClient";
 
@@ -68,6 +69,27 @@ export async function signOutEverywhere(): Promise<void> {
   }
   resetSessionStores();
   await signOut(auth);
+}
+
+/** App start: end a session left over from last time. Signs out locally at once
+ * (so it can never interfere with a new login) and revokes it on the backend in
+ * the background with the OLD session's token. */
+export async function endRestoredSession(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) return;
+  let token: string | null = null;
+  try {
+    token = await user.getIdToken();
+  } catch {
+    token = null;
+  }
+  resetSessionStores();
+  await signOut(auth);
+  if (token) {
+    fetch(`${API_BASE_URL}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {
+      // offline: the session is already ended on this device
+    });
+  }
 }
 
 export interface ResetCodeResult {

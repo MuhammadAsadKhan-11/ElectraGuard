@@ -197,10 +197,10 @@ export default function NotificationsScreen(props?: { onClose?: () => void }) {
               <Text style={styles.emptyIcon}>🔕</Text>
               <Text style={[styles.emptyText, { color: colors.text }]}>
                 {error
-                  ? "Notifications load nahi ho sakin"
+                  ? "Notifications could not be loaded"
                   : tab === "unread"
-                    ? "Koi unread notification nahi"
-                    : "Abhi koi notification nahi"}
+                    ? "No unread notifications"
+                    : "No notifications yet"}
               </Text>
               {!!error && (
                 <>

@@ -24,7 +24,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Language, Theme } from "../../../constants/translations";
+import { Language, Theme, languageLabels } from "../../../constants/translations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { auth, db } from "../../../firebaseConfig";
 import { resetSessionStores, signOutEverywhere } from "../../../hooks/authSession";
@@ -394,12 +394,9 @@ const SystemSettingsModal: React.FC<{
   const { t, language, theme, setLanguage, setTheme, colors } =
     useAppSettings();
 
-  const languages: { key: Language; label: string }[] = [
-    { key: "en", label: "English" },
-    { key: "ur_roman", label: "اردو (Roman)" },
-    { key: "ur", label: "اردو" },
-    { key: "ar", label: "العربية" },
-  ];
+  const languages: { key: Language; label: string }[] = (
+    ["en", "ur", "ur_roman", "ar"] as Language[]
+  ).map((key) => ({ key, label: languageLabels[key] }));
 
   const themes: { key: Theme; label: string; icon: IoniconsName }[] = [
     { key: "light", label: t.themeLight, icon: "sunny-outline" },

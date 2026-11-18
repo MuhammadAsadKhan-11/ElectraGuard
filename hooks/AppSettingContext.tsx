@@ -21,6 +21,11 @@ export const lightColors: ThemeColors = lightTheme;
 
 export const darkColors: ThemeColors = darkTheme;
 
+// Any language that has a translation set is valid (en, ur, ur_roman, ar);
+// anything unknown falls back to English.
+const supportedLanguage = (lang: string | null | undefined): Language =>
+  lang && lang in translationsMap ? (lang as Language) : 'en';
+
 // ─────────────────────────────────────────────────────────────
 // CONTEXT TYPE
 // ─────────────────────────────────────────────────────────────
@@ -60,7 +65,8 @@ export const AppSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ c
           AsyncStorage.getItem('app_language'),
           AsyncStorage.getItem('app_theme'),
         ]);
-        if (savedLang)  setLangState(savedLang as Language);
+        // Respect the saved preference (Urdu / Roman Urdu included).
+        if (savedLang)  setLangState(supportedLanguage(savedLang));
         if (savedTheme) setThemeState(savedTheme as Theme);
       } catch (e) {
         console.error('Settings load error:', e);
@@ -77,8 +83,9 @@ export const AppSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // (translations + manual textAlign/writingDirection jahan zaroorat ho)
   // se handle hota hai; layout hamesha LTR rehta hai.
   const setLanguage = useCallback(async (lang: Language) => {
-    setLangState(lang);
-    await AsyncStorage.setItem('app_language', lang);
+    const next = supportedLanguage(lang);
+    setLangState(next);
+    await AsyncStorage.setItem('app_language', next);
   }, []);
 
   // ── Set theme + save ───────────────────────────────────────

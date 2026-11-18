@@ -28,7 +28,8 @@ export interface ReportsSummaryDTO {
     avgResponseHours: StatDTO; // hours
   };
   /** counts per risk level (frontend converts to percentages) */
-  riskDistribution: { low: number; medium: number; high: number };
+  riskDistribution: { low: number; medium: number; high: number; total?: number; unclassified?: number };
+  consumptionTrend?: { date: string; label: string; normal: number; theft: number }[];
   areaTheft: { area: string; cases: number }[];
   revenueLossByArea: { area: string; amount: number }[];
   insights: InsightDTO[];

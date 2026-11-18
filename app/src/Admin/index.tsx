@@ -19,6 +19,7 @@ import {
 import NotificationBell from "../../../components/NotificationBell";
 import { TabHero } from "../../../components/AppChrome";
 import { formatNumber, niceCeil, palette } from "../../../constants/adminUi";
+import { CONSUMPTION_CHART_COLORS } from "../../../constants/chartColors";
 import { auth, db } from "../../../firebaseConfig";
 import { useAppSettings } from "../../../hooks/AppSettingContext";
 import {
@@ -97,7 +98,7 @@ const changeBadge = (pct: number | null | undefined) =>
         color: pct >= 0 ? palette.success : palette.danger,
       };
 
-// ─── Chart (red = theft, blue = normal) ──────────────────────
+// ─── Chart (red = theft, blue = normal) — colors by series name, see constants/chartColors.ts ──
 const MiniChart = ({
   points,
   spikeRatio,
@@ -182,8 +183,8 @@ const MiniChart = ({
             const prev = points[i - 1];
             return (
               <React.Fragment key={`seg-${i}-${p.date}`}>
-                {segment(getX(i - 1), getY(prev.normal), getX(i), getY(p.normal), palette.accent, `n-${i}`)}
-                {segment(getX(i - 1), getY(prev.theft), getX(i), getY(p.theft), palette.secondary, `t-${i}`)}
+                {segment(getX(i - 1), getY(prev.normal), getX(i), getY(p.normal), CONSUMPTION_CHART_COLORS.normal, `n-${i}`)}
+                {segment(getX(i - 1), getY(prev.theft), getX(i), getY(p.theft), CONSUMPTION_CHART_COLORS.theft, `t-${i}`)}
               </React.Fragment>
             );
           })}
@@ -192,13 +193,13 @@ const MiniChart = ({
               <View
                 style={[
                   styles.chartDot,
-                  { left: getX(i) - 4, top: getY(p.normal) - 4, backgroundColor: palette.accent },
+                  { left: getX(i) - 4, top: getY(p.normal) - 4, backgroundColor: CONSUMPTION_CHART_COLORS.normal },
                 ]}
               />
               <View
                 style={[
                   styles.chartDot,
-                  { left: getX(i) - 4, top: getY(p.theft) - 4, backgroundColor: palette.secondary },
+                  { left: getX(i) - 4, top: getY(p.theft) - 4, backgroundColor: CONSUMPTION_CHART_COLORS.theft },
                 ]}
               />
             </React.Fragment>
@@ -220,11 +221,11 @@ const MiniChart = ({
 
       <View style={styles.legendRow}>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: palette.secondary }]} />
+          <View style={[styles.legendDot, { backgroundColor: CONSUMPTION_CHART_COLORS.theft }]} />
           <Text style={[styles.legendText, { color: colors.subText }]}>Theft</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: palette.accent }]} />
+          <View style={[styles.legendDot, { backgroundColor: CONSUMPTION_CHART_COLORS.normal }]} />
           <Text style={[styles.legendText, { color: colors.subText }]}>
             Normal Consumption
           </Text>

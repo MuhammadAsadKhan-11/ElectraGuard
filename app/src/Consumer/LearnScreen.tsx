@@ -373,7 +373,7 @@ export default function LearnScreen(): React.ReactElement {
       }
     } catch (err) {
       console.error("Fetch error:", err);
-      setError("Data load nahi ho saka. Internet connection check karein.");
+      setError("Could not load the content. Please check your internet connection.");
     } finally {
       setLoading(false);
       setRefreshing(false);
