@@ -61,12 +61,15 @@ const KPICard = ({
   imageIndex: number;
 }) => {
   const { colors } = useAppSettings();
+  // Navy is unreadable on dark cards, so it follows the theme's text colour there.
+  const isDark = colors.statusBar === "light-content";
+  const valueColor = isDark && color === palette.primary ? colors.text : color;
   return (
     <View style={[styles.kpiCard, { backgroundColor: colors.card }]}>
       <View style={styles.kpiHeader}>
         <Image
           source={KPI_IMAGES[imageIndex]}
-          style={styles.kpiIcon}
+          style={[styles.kpiIcon, isDark && imageIndex === 1 && { tintColor: colors.text }]}
           resizeMode="contain"
         />
         {badge && (
@@ -77,7 +80,7 @@ const KPICard = ({
           </View>
         )}
       </View>
-      <Text style={[styles.kpiValue, { color }]} numberOfLines={1}>
+      <Text style={[styles.kpiValue, { color: valueColor }]} numberOfLines={1}>
         {value}
       </Text>
       <Text style={[styles.kpiTitle, { color: colors.subText }]} numberOfLines={2}>
@@ -390,7 +393,7 @@ export default function DashboardScreen() {
               </View>
               <Text style={[styles.quickBtnText, { color: colors.text }]}>View risk list</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={palette.primary} />
+            <Ionicons name="chevron-forward" size={18} color={colors.statusBar === "light-content" ? colors.text : palette.primary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.quickBtn, { backgroundColor: colors.card }]}
@@ -402,7 +405,7 @@ export default function DashboardScreen() {
               </View>
               <Text style={[styles.quickBtnText, { color: colors.text }]}>Open cases</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={palette.primary} />
+            <Ionicons name="chevron-forward" size={18} color={colors.statusBar === "light-content" ? colors.text : palette.primary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.quickBtn, { backgroundColor: colors.card }]}
@@ -414,7 +417,7 @@ export default function DashboardScreen() {
               </View>
               <Text style={[styles.quickBtnText, { color: colors.text }]}>Reports</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={palette.primary} />
+            <Ionicons name="chevron-forward" size={18} color={colors.statusBar === "light-content" ? colors.text : palette.primary} />
           </TouchableOpacity>
         </View>
 

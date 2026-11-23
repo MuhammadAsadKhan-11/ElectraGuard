@@ -41,6 +41,7 @@ type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 // FAQ ITEM COMPONENT
 // ─────────────────────────────────────────────────────────────
 const FAQAccordion: React.FC<{ item: FAQItem }> = ({ item }) => {
+  const styles = useThemedStyles();
   const [open, setOpen] = useState(false);
 
   return (
@@ -54,7 +55,7 @@ const FAQAccordion: React.FC<{ item: FAQItem }> = ({ item }) => {
           <Ionicons
             name={(item.icon as IoniconsName) || "help-circle-outline"}
             size={16}
-            color="#111111"
+            color={styles.faqQuestion.color}
             style={{ marginTop: 1 }}
           />
           <Text style={styles.faqQuestion}>{item.question}</Text>
@@ -77,7 +78,9 @@ const FAQAccordion: React.FC<{ item: FAQItem }> = ({ item }) => {
 // ─────────────────────────────────────────────────────────────
 // KNOWLEDGE BASE ARTICLE CARD
 // ─────────────────────────────────────────────────────────────
-const ArticleCard: React.FC<{ article: KBArticle }> = ({ article }) => (
+const ArticleCard: React.FC<{ article: KBArticle }> = ({ article }) => {
+  const styles = useThemedStyles();
+  return (
   <TouchableOpacity
     style={styles.articleCard}
     onPress={() => Linking.openURL(article.url)}
@@ -97,6 +100,7 @@ const ArticleCard: React.FC<{ article: KBArticle }> = ({ article }) => (
     <Ionicons name="open-outline" size={15} color="#8E8E93" />
   </TouchableOpacity>
 );
+};
 
 // ─────────────────────────────────────────────────────────────
 // WHATSAPP HELPER
@@ -122,6 +126,7 @@ const openWhatsApp = async (phoneNumber: string) => {
 // ─────────────────────────────────────────────────────────────
 export default function SupportScreen(): React.ReactElement {
   const { colors, t } = useAppSettings();
+  const styles = useThemedStyles();
   const [data, setData] = useState<SupportData>({
     faqs: [],
     articles: [],
@@ -184,7 +189,7 @@ export default function SupportScreen(): React.ReactElement {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#111111" />
+        <ActivityIndicator size="large" color={styles.faqQuestion.color} />
         <Text style={styles.loadingText}>Loading support...</Text>
       </View>
     );
@@ -246,7 +251,7 @@ export default function SupportScreen(): React.ReactElement {
             activeOpacity={0.8}
           >
             <View
-              style={[styles.contactIconBox, { backgroundColor: "#E7F7EC" }]}
+              style={[styles.contactIconBox, { backgroundColor: styles === darkStyles ? "#3A3A3C" : "#E7F7EC" }]}
             >
               <Ionicons name="logo-whatsapp" size={22} color="#25D366" />
             </View>
@@ -273,7 +278,7 @@ export default function SupportScreen(): React.ReactElement {
             activeOpacity={0.8}
           >
             <View
-              style={[styles.contactIconBox, { backgroundColor: "#F0FFF4" }]}
+              style={[styles.contactIconBox, { backgroundColor: styles === darkStyles ? "#3A3A3C" : "#F0FFF4" }]}
             >
               <Ionicons name="help-circle-outline" size={22} color="#34C759" />
             </View>
@@ -297,7 +302,7 @@ export default function SupportScreen(): React.ReactElement {
         >
           <View style={styles.kbLeft}>
             <View
-              style={[styles.contactIconBox, { backgroundColor: "#FFF7ED" }]}
+              style={[styles.contactIconBox, { backgroundColor: styles === darkStyles ? "#3A3A3C" : "#FFF7ED" }]}
             >
               <Ionicons name="library-outline" size={22} color="#D97706" />
             </View>
@@ -356,7 +361,7 @@ export default function SupportScreen(): React.ReactElement {
 // ─────────────────────────────────────────────────────────────
 // STYLES
 // ─────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+const lightStyles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F2F2F7" },
   scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 },
 
@@ -601,3 +606,39 @@ const styles = StyleSheet.create({
   },
   chatBotHintText: { color: "#111111", fontWeight: "700", fontSize: 14 },
 });
+
+// Dark mode overrides; the light theme above is unchanged.
+const DARK = { bg: "#1C1C1E", card: "#2C2C2E", field: "#3A3A3C", line: "#48484A", text: "#FFFFFF", body: "#D1D1D6", muted: "#AEAEB2" };
+const darkOverrides = StyleSheet.create({
+  safeArea: { backgroundColor: DARK.bg },
+  centered: { backgroundColor: DARK.bg },
+  loadingText: { color: DARK.muted },
+  errorText: { color: DARK.muted },
+  headerCard: { backgroundColor: DARK.card },
+  headerTitle: { color: DARK.text },
+  headerSubtitle: { color: DARK.muted },
+  contactCard: { backgroundColor: DARK.card },
+  contactLabel: { color: DARK.text },
+  contactSub: { color: DARK.muted },
+  onlineBadge: { backgroundColor: "#1B2A22" },
+  kbCard: { backgroundColor: DARK.card },
+  articlesContainer: { backgroundColor: DARK.card },
+  articleCard: { borderBottomColor: DARK.line },
+  articleLabel: { color: DARK.text },
+  articleCategory: { color: DARK.body, backgroundColor: DARK.field },
+  sectionTitle: { color: DARK.text },
+  faqContainer: { backgroundColor: DARK.card },
+  faqItem: { borderBottomColor: DARK.line },
+  faqQuestion: { color: DARK.text },
+  faqAnswer: { backgroundColor: DARK.bg },
+  faqAnswerText: { color: DARK.body },
+});
+const darkStyles = { ...lightStyles } as typeof lightStyles;
+(Object.keys(darkOverrides) as (keyof typeof darkOverrides)[]).forEach((key) => {
+  (darkStyles as Record<string, unknown>)[key] = StyleSheet.flatten([lightStyles[key], darkOverrides[key]]);
+});
+
+function useThemedStyles() {
+  const { colors } = useAppSettings();
+  return colors.statusBar === "light-content" ? darkStyles : lightStyles;
+}

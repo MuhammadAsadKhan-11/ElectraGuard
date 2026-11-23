@@ -148,8 +148,7 @@ const BarChart: React.FC<{
               fontSize={9}
               fill={textColor}
               textAnchor="end"
-              rotation={-40}
-              origin={`${cx + 4}, ${ly}`}
+              transform={`rotate(-40 ${cx + 4} ${ly})`}
             >
               {label}
             </SvgText>
@@ -590,9 +589,10 @@ export default function ReportsScreen(): React.ReactElement {
               ) : (
                 data.insights.map((ins) => {
                   const st = INSIGHT_STYLE[ins.type] ?? INSIGHT_STYLE.info;
+                  const stColor = st.color === "#111111" && colors.statusBar === "light-content" ? "#FFFFFF" : st.color;
                   return (
-                    <View key={ins.id} style={[styles.insightRow, { backgroundColor: st.color + "18" }]}>
-                      <Ionicons name={st.icon} size={18} color={st.color} style={{ marginTop: 1 }} />
+                    <View key={ins.id} style={[styles.insightRow, { backgroundColor: stColor + "18" }]}>
+                      <Ionicons name={st.icon} size={18} color={stColor} style={{ marginTop: 1 }} />
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.insightTitle, { color: colors.text }]}>{ins.title}</Text>
                         <Text style={[styles.insightSub, { color: colors.subText }]}>{ins.subtitle}</Text>

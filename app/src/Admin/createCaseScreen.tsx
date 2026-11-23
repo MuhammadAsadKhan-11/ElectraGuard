@@ -91,17 +91,19 @@ function Dropdown<T extends string>({
   placeholder: string;
 }) {
   const [open, setOpen] = useState(false);
+  const { colors } = useAppSettings();
+  const surface = { backgroundColor: colors.card, borderColor: colors.border };
   return (
     <View style={dd.wrap}>
-      <Text style={dd.label}>{label} *</Text>
-      <TouchableOpacity style={dd.btn} onPress={() => setOpen((o) => !o)} activeOpacity={0.8}>
-        <Text style={[dd.btnText, !value && { color: Colors.textSecondary }]}>
+      <Text style={[dd.label, { color: colors.text }]}>{label} *</Text>
+      <TouchableOpacity style={[dd.btn, surface]} onPress={() => setOpen((o) => !o)} activeOpacity={0.8}>
+        <Text style={[dd.btnText, { color: value ? colors.text : colors.subText }]}>
           {value || placeholder}
         </Text>
-        <Text style={dd.arrow}>{open ? "▲" : "▼"}</Text>
+        <Text style={[dd.arrow, { color: colors.subText }]}>{open ? "▲" : "▼"}</Text>
       </TouchableOpacity>
       {open && (
-        <View style={dd.menu}>
+        <View style={[dd.menu, surface]}>
           {options.map((opt) => (
             <TouchableOpacity
               key={opt}
@@ -111,7 +113,7 @@ function Dropdown<T extends string>({
                 setOpen(false);
               }}
             >
-              <Text style={[dd.itemText, value === opt && dd.itemTextActive]}>{opt}</Text>
+              <Text style={[dd.itemText, { color: colors.text }, value === opt && dd.itemTextActive]}>{opt}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -166,6 +168,8 @@ export default function CreateCaseScreen(props?: {
 }) {
   const router = useRouter();
   const { colors, language } = useAppSettings();
+  const inputTheme = { backgroundColor: colors.card, borderColor: colors.border, color: colors.text };
+  const surface = { backgroundColor: colors.card, borderColor: colors.border };
   const S = getStrings(language).createCase;
 
   // Consumer Profile screen se "Create Case" par tap karne par consumerId/consumerName
@@ -324,9 +328,9 @@ export default function CreateCaseScreen(props?: {
                 {S.consumerId}
               </Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, inputTheme]}
                 placeholder={S.ph_consumerId}
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={colors.subText}
                 value={consumerId}
                 onChangeText={setConsumerId}
                 autoCapitalize="characters"
@@ -338,9 +342,9 @@ export default function CreateCaseScreen(props?: {
                 {S.consumerName}
               </Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, inputTheme]}
                 placeholder={S.ph_consumerName}
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={colors.subText}
                 value={consumerName}
                 onChangeText={setConsumerName}
               />
@@ -351,9 +355,9 @@ export default function CreateCaseScreen(props?: {
                 {S.areaLocation}
               </Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, inputTheme]}
                 placeholder={S.ph_area}
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={colors.subText}
                 value={area}
                 onChangeText={setArea}
               />
@@ -379,9 +383,9 @@ export default function CreateCaseScreen(props?: {
                 {S.description}
               </Text>
               <TextInput
-                style={[styles.input, styles.textArea]}
+                style={[styles.input, styles.textArea, inputTheme]}
                 placeholder={S.ph_description}
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={colors.subText}
                 value={description}
                 onChangeText={setDescription}
                 multiline
@@ -395,9 +399,9 @@ export default function CreateCaseScreen(props?: {
                 {S.assignInspectorOptional}
               </Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, inputTheme]}
                 placeholder={S.ph_inspector}
-                placeholderTextColor={Colors.textSecondary}
+                placeholderTextColor={colors.subText}
                 value={inspector}
                 onChangeText={setInspector}
               />
@@ -421,7 +425,7 @@ export default function CreateCaseScreen(props?: {
                   <Text style={styles.uploadBtnText}>{S.uploadImage}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.uploadBtn, styles.uploadBtnDoc]}
+                  style={[styles.uploadBtn, styles.uploadBtnDoc, { backgroundColor: colors.card }]}
                   onPress={pickDocument}
                   activeOpacity={0.8}
                 >
@@ -433,7 +437,7 @@ export default function CreateCaseScreen(props?: {
               {files.length > 0 && (
                 <View style={styles.fileList}>
                   {files.map((f, i) => (
-                    <View key={`${f.uri}-${i}`} style={styles.fileItem}>
+                    <View key={`${f.uri}-${i}`} style={[styles.fileItem, surface]}>
                       <Text style={styles.fileIcon}>{f.type === "image" ? "🖼" : "📄"}</Text>
                       <Text
                         style={[styles.fileName, { color: colors?.text ?? Colors.text }]}
@@ -470,7 +474,7 @@ export default function CreateCaseScreen(props?: {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.cancelBtn} onPress={goBack} disabled={submitting}>
+            <TouchableOpacity style={[styles.cancelBtn, surface]} onPress={goBack} disabled={submitting}>
               <Text style={[styles.cancelBtnText, { color: colors?.subText ?? Colors.textSecondary }]}>
                 {S.cancel}
               </Text>

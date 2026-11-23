@@ -225,6 +225,7 @@ function getDateRange() {
 // ─── Main Component ───────────────────────────────────────────────
 export default function ConsumerDashboard() {
   const { colors, t } = useAppSettings();
+  const isDark = colors.statusBar === "light-content";
   const [consumer, setConsumer] = useState<ConsumerData | null>(null);
   const [consumptions, setConsumptions] = useState<ConsumptionRecord[]>([]);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
@@ -522,7 +523,7 @@ export default function ConsumerDashboard() {
         </View>
 
         {/* ── CSV Upload ── */}
-        <Text style={styles.sectionTitle}>Enter CSV File</Text>
+        <Text style={[styles.sectionTitle, isDark && { color: colors.text }]}>Enter CSV File</Text>
         <TouchableOpacity
           style={styles.uploadBox}
           onPress={handlePickCSV}
@@ -589,13 +590,13 @@ export default function ConsumerDashboard() {
 
         {/* ── Recent Consumptions ── */}
         <View style={styles.recentHeader}>
-          <Text style={styles.sectionTitle}>Recent Consumptions</Text>
+          <Text style={[styles.sectionTitle, isDark && { color: colors.text }]}>Recent Consumptions</Text>
         </View>
 
         {consumptions.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Ionicons name="analytics-outline" size={32} color="#D1D5DB" />
-            <Text style={styles.emptyText}>No consumption data yet</Text>
+          <View style={[styles.emptyBox, isDark && { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="analytics-outline" size={32} color={isDark ? colors.subText : "#D1D5DB"} />
+            <Text style={[styles.emptyText, isDark && { color: colors.subText }]}>No consumption data yet</Text>
           </View>
         ) : (
           <ScrollView

@@ -46,6 +46,7 @@ interface ConsumerData {
 // ─── Main Component ───────────────────────────────────────────────
 export default function ReportScreen() {
   const { colors, t } = useAppSettings();
+  const styles = colors.statusBar === "light-content" ? darkStyles : lightStyles;
   const [consumer, setConsumer] = useState<ConsumerData | null>(null);
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([]);
   const [previousReports, setPreviousReports] = useState<ReportDisplayItem[]>(
@@ -419,7 +420,7 @@ export default function ReportScreen() {
           <Text style={styles.cardTitle}>My Submitted Cases</Text>
 
           {loadingReports ? (
-            <ActivityIndicator color="#111111" style={{ marginVertical: 20 }} />
+            <ActivityIndicator color={styles.cardTitle.color} style={{ marginVertical: 20 }} />
           ) : previousReports.length === 0 ? (
             <View style={styles.emptyBox}>
               <Ionicons name="document-outline" size={28} color="#D1D5DB" />
@@ -565,7 +566,7 @@ export default function ReportScreen() {
             <Text style={styles.modalTitle}>Select Issue Type</Text>
             {loadingTypes ? (
               <ActivityIndicator
-                color="#111111"
+                color={styles.cardTitle.color}
                 style={{ marginVertical: 20 }}
               />
             ) : issueTypes.length === 0 ? (
@@ -606,7 +607,7 @@ export default function ReportScreen() {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+const lightStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F2F2F7" },
   container: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 110 },
   required: { color: "#FF3B30" },
@@ -874,4 +875,43 @@ const styles = StyleSheet.create({
   modalOptionActive: { backgroundColor: "#E8F1FF" },
   modalOptionText: { fontSize: 14, color: "#374151" },
   modalOptionTextActive: { fontSize: 14, fontWeight: "600", color: "#111111" },
+});
+
+// Dark mode overrides; the light theme above is unchanged.
+const DARK = { bg: "#1C1C1E", card: "#2C2C2E", field: "#3A3A3C", line: "#48484A", text: "#FFFFFF", body: "#D1D1D6", muted: "#AEAEB2" };
+const darkOverrides = StyleSheet.create({
+  screen: { backgroundColor: DARK.bg },
+  card: { backgroundColor: DARK.card },
+  cardTitle: { color: DARK.text },
+  fieldLabel: { color: DARK.body },
+  dropdown: { backgroundColor: DARK.field, borderColor: DARK.line },
+  dropdownPlaceholder: { color: DARK.muted },
+  dropdownSelected: { color: DARK.text },
+  textArea: { backgroundColor: DARK.field, borderColor: DARK.line, color: DARK.text },
+  input: { backgroundColor: DARK.field, borderColor: DARK.line, color: DARK.text },
+  urgencyBtn: { borderColor: DARK.line },
+  urgencyBtnText: { color: DARK.muted },
+  imageUploadBox: { borderColor: DARK.line },
+  imageUploadTitle: { color: DARK.body },
+  imageUploadSub: { color: DARK.muted },
+  imageChangeTxt: { color: DARK.muted },
+  infoBox: { backgroundColor: "#1F3330" },
+  infoTitle: { color: DARK.text },
+  infoText: { color: DARK.body },
+  reportCard: { borderColor: DARK.line },
+  reportRefId: { color: DARK.text },
+  reportIssueType: { color: DARK.text },
+  reportLocation: { color: DARK.muted },
+  reportDate: { color: DARK.muted },
+  reportResolution: { color: DARK.muted },
+  contactLabel: { color: DARK.muted },
+  contactValue: { color: DARK.text },
+  emptyText: { color: DARK.muted },
+  modalBox: { backgroundColor: DARK.card },
+  modalTitle: { color: DARK.text },
+  modalOptionText: { color: DARK.body },
+});
+const darkStyles = { ...lightStyles } as typeof lightStyles;
+(Object.keys(darkOverrides) as (keyof typeof darkOverrides)[]).forEach((key) => {
+  (darkStyles as Record<string, unknown>)[key] = StyleSheet.flatten([lightStyles[key], darkOverrides[key]]);
 });

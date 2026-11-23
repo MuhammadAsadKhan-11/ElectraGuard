@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CHAT_ENDPOINT } from "../../../constants/api";
+import { useAppSettings } from "../../../hooks/AppSettingContext";
 
 // Render free tier can take 30-60s to wake up, so allow a long timeout
 const REQUEST_TIMEOUT_MS = 90_000;
@@ -132,13 +133,17 @@ const BOT_GREETING: Message = {
 /* ─────────────────────────────────────────────────────────────
    Components
 ───────────────────────────────────────────────────────────── */
-const BotAvatar = () => (
+const BotAvatar = () => {
+  const styles = useThemedStyles();
+  return (
   <View style={styles.avatarCircle}>
     <Text style={styles.avatarText}>⚡</Text>
   </View>
 );
+};
 
 const MessageBubble = ({ item }: { item: Message }) => {
+  const styles = useThemedStyles();
   const isUser = item.sender === "user";
   const sources = item.sources ? Array.from(new Set(item.sources.map(sourceLabel))) : [];
 
@@ -189,6 +194,7 @@ const MessageBubble = ({ item }: { item: Message }) => {
    Main Screen
 ───────────────────────────────────────────────────────────── */
 export default function SupportChatScreen() {
+  const styles = useThemedStyles();
   // Chat is opened from Help & Support, so back (button or Android back key) returns there.
   const goBackToSupport = useCallback(() => {
     router.navigate("/src/Consumer/supportscreen" as any);
@@ -351,7 +357,7 @@ const WHITE = "#ffffff";
 const LIGHT_BG = "#F2F2F7";
 const BORDER = "#E5E5EA";
 
-const styles = StyleSheet.create({
+const lightStyles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: BLACK },
   flex: { flex: 1, backgroundColor: LIGHT_BG },
 
@@ -495,3 +501,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+
+// Dark mode overrides; the light theme above is unchanged.
+const DARK = { bg: "#1C1C1E", card: "#2C2C2E", line: "#48484A", text: "#FFFFFF", body: "#D1D1D6", muted: "#AEAEB2" };
+const darkOverrides = StyleSheet.create({
+  flex: { backgroundColor: DARK.bg },
+  bubbleBot: { backgroundColor: DARK.card },
+  bubbleTextBot: { color: DARK.text },
+  sourcesText: { color: DARK.body },
+  timeText: { color: DARK.muted },
+  inputBar: { backgroundColor: DARK.card, borderTopColor: DARK.line },
+  input: { color: DARK.text },
+  sendBtnDisabled: { backgroundColor: DARK.line },
+});
+const darkStyles = { ...lightStyles } as typeof lightStyles;
+(Object.keys(darkOverrides) as (keyof typeof darkOverrides)[]).forEach((key) => {
+  (darkStyles as Record<string, unknown>)[key] = StyleSheet.flatten([lightStyles[key], darkOverrides[key]]);
+});
+
+function useThemedStyles() {
+  const { colors } = useAppSettings();
+  return colors.statusBar === "light-content" ? darkStyles : lightStyles;
+}

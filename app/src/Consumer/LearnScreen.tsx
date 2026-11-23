@@ -134,7 +134,9 @@ const safeIcon = (
 // ─────────────────────────────────────────────────────────────
 
 /** Electricity Theft — subsection card */
-const SubsectionCard: React.FC<{ sub: Subsection }> = ({ sub }) => (
+const SubsectionCard: React.FC<{ sub: Subsection }> = ({ sub }) => {
+  const styles = useLearnStyles();
+  return (
   <View style={styles.subsectionCard}>
     <View style={styles.subsectionHeader}>
       <Ionicons
@@ -152,7 +154,7 @@ const SubsectionCard: React.FC<{ sub: Subsection }> = ({ sub }) => (
         <Ionicons
           name="remove"
           size={13}
-          color="#111111"
+          color={styles.tipTitle.color}
           style={{ marginTop: 3 }}
         />
         <Text style={styles.bulletText}>{bp}</Text>
@@ -160,12 +162,15 @@ const SubsectionCard: React.FC<{ sub: Subsection }> = ({ sub }) => (
     ))}
   </View>
 );
+};
 
 /** Energy Saving — tip card */
-const TipCard: React.FC<{ tip: Tip }> = ({ tip }) => (
+const TipCard: React.FC<{ tip: Tip }> = ({ tip }) => {
+  const styles = useLearnStyles();
+  return (
   <View style={styles.tipCard}>
     <View
-      style={[styles.tipIconBox, { backgroundColor: tip.iconColor + "20" }]}
+      style={[styles.tipIconBox, { backgroundColor: styles === darkStyles && isDeepColor(tip.iconColor) ? "#E5E5EA" : tip.iconColor + "20" }]}
     >
       <Ionicons
         name={safeIcon(tip.icon, "flash")}
@@ -179,9 +184,12 @@ const TipCard: React.FC<{ tip: Tip }> = ({ tip }) => (
     </View>
   </View>
 );
+};
 
 /** Safety — numbered tampering sign */
-const TamperingSign: React.FC<{ item: TamperingSignItem }> = ({ item }) => (
+const TamperingSign: React.FC<{ item: TamperingSignItem }> = ({ item }) => {
+  const styles = useLearnStyles();
+  return (
   <View style={styles.tamperRow}>
     <View style={styles.tamperBadge}>
       <Text style={styles.tamperBadgeText}>{item.number}</Text>
@@ -192,9 +200,12 @@ const TamperingSign: React.FC<{ item: TamperingSignItem }> = ({ item }) => (
     </Text>
   </View>
 );
+};
 
 /** Safety — suspicious activity step */
-const SuspiciousStep: React.FC<{ step: SuspiciousStepItem }> = ({ step }) => (
+const SuspiciousStep: React.FC<{ step: SuspiciousStepItem }> = ({ step }) => {
+  const styles = useLearnStyles();
+  return (
   <View style={styles.stepRow}>
     <Ionicons
       name={safeIcon(step.icon, "checkmark-circle")}
@@ -205,6 +216,7 @@ const SuspiciousStep: React.FC<{ step: SuspiciousStepItem }> = ({ step }) => (
     <Text style={styles.stepText}>{step.text}</Text>
   </View>
 );
+};
 
 // ─────────────────────────────────────────────────────────────
 // SECTION RENDERERS
@@ -212,7 +224,9 @@ const SuspiciousStep: React.FC<{ step: SuspiciousStepItem }> = ({ step }) => (
 
 const ElectricityTheftSection: React.FC<{ data: ElectricityTheftData }> = ({
   data,
-}) => (
+}) => {
+  const styles = useLearnStyles();
+  return (
   <View style={styles.card}>
     {/* Header */}
     <View style={styles.cardHeader}>
@@ -242,10 +256,13 @@ const ElectricityTheftSection: React.FC<{ data: ElectricityTheftData }> = ({
     </TouchableOpacity>
   </View>
 );
+};
 
 const EnergySavingSection: React.FC<{ data: EnergySavingData }> = ({
   data,
-}) => (
+}) => {
+  const styles = useLearnStyles();
+  return (
   <View style={styles.card}>
     {/* Header */}
     <View style={styles.cardHeader}>
@@ -264,10 +281,13 @@ const EnergySavingSection: React.FC<{ data: EnergySavingData }> = ({
     ))}
   </View>
 );
+};
 
 const SafetyGuidelinesSection: React.FC<{ data: SafetyGuidelinesData }> = ({
   data,
-}) => (
+}) => {
+  const styles = useLearnStyles();
+  return (
   <View style={styles.card}>
     {/* Header */}
     <View style={styles.cardHeader}>
@@ -335,12 +355,14 @@ const SafetyGuidelinesSection: React.FC<{ data: SafetyGuidelinesData }> = ({
     )}
   </View>
 );
+};
 
 // ─────────────────────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────
 export default function LearnScreen(): React.ReactElement {
   const { colors } = useAppSettings();
+  const styles = useLearnStyles();
   const [sections, setSections] = useState<SectionData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -422,7 +444,7 @@ export default function LearnScreen(): React.ReactElement {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#111111" />
+        <ActivityIndicator size="large" color={styles.tipTitle.color} />
         <Text style={styles.loadingText}>Loading content...</Text>
       </View>
     );
@@ -473,7 +495,7 @@ export default function LearnScreen(): React.ReactElement {
 // ─────────────────────────────────────────────────────────────
 // STYLES
 // ─────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+const lightStyles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F2F2F7" },
   scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 },
 
@@ -658,3 +680,47 @@ const styles = StyleSheet.create({
   },
   communityBody: { color: "#BEE3F8", fontSize: 12, lineHeight: 18 },
 });
+
+// Dark mode overrides; the light theme above is unchanged.
+const DARK = { bg: "#1C1C1E", card: "#2C2C2E", text: "#FFFFFF", body: "#D1D1D6", muted: "#AEAEB2" };
+const darkOverrides = StyleSheet.create({
+  safeArea: { backgroundColor: DARK.bg },
+  centered: { backgroundColor: DARK.bg },
+  loadingText: { color: DARK.muted },
+  errorText: { color: DARK.muted },
+  pageTitle: { color: DARK.text },
+  pageSubtitle: { color: DARK.muted },
+  card: { backgroundColor: DARK.card },
+  cardTitle: { color: DARK.text },
+  cardSubtitle: { color: DARK.muted },
+  subsectionCard: { backgroundColor: DARK.bg, borderLeftColor: "#48484A" },
+  subsectionBody: { color: DARK.body },
+  bulletText: { color: DARK.body },
+  tipCard: { backgroundColor: "#1B2A22" },
+  tipTitle: { color: DARK.text },
+  tipBody: { color: DARK.body },
+  innerBox: { backgroundColor: DARK.bg },
+  innerBoxTitle: { color: DARK.text },
+  tamperText: { color: DARK.body },
+  tamperLabel: { color: DARK.text },
+  stepText: { color: DARK.body },
+});
+const darkStyles = { ...lightStyles } as typeof lightStyles;
+(Object.keys(darkOverrides) as (keyof typeof darkOverrides)[]).forEach((key) => {
+  (darkStyles as Record<string, unknown>)[key] = StyleSheet.flatten([lightStyles[key], darkOverrides[key]]);
+});
+
+// Deep icon colours need a light tile to stay visible on dark cards.
+function isDeepColor(hex: string) {
+  const v = parseInt(hex.replace("#", "").slice(0, 6), 16);
+  const [r, g, b] = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => {
+    const x = c / 255;
+    return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.25;
+}
+
+function useLearnStyles() {
+  const { colors } = useAppSettings();
+  return colors.statusBar === "light-content" ? darkStyles : lightStyles;
+}
