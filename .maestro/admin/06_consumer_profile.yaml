@@ -1,0 +1,29 @@
+appId: com.electraguard.app
+name: "ADM-06 Open a high-risk consumer profile"
+tags: [admin, risks]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Risks"
+- extendedWaitUntil:
+    visible: "High-risk consumers"
+    timeout: 20000
+- assertVisible: "Accounts that need a closer look"
+- extendedWaitUntil:
+    visible: "Risk Score"
+    timeout: 30000
+- tapOn:
+    text: "Risk Score"
+    index: 0
+- extendedWaitUntil:
+    visible: "Consumer Profile"
+    timeout: 20000
+- assertVisible: "Risk Analysis|Prediction|Status"
+- scrollUntilVisible:
+    element:
+      text: "Consumption History"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      text: "Case History"
+    direction: DOWN
+- takeScreenshot: reports/ADM-06_consumer_profile

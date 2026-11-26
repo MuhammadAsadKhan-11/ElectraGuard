@@ -1,0 +1,33 @@
+# Consumer ke taur par login. Agar pehle se login hai to skip. Admin login ho to pehle logout.
+# Env: CONSUMER_EMAIL, CONSUMER_PASSWORD, (optional) OTP
+appId: com.electraguard.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Sign in|Welcome back.*|System administrator"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "System administrator"
+    file: logout.yaml
+- runFlow:
+    when:
+      visible: "Sign in"
+    commands:
+      - tapOn: "Consumer"
+      - tapOn: "Consumer ID or email"
+      - inputText: ${CONSUMER_EMAIL}
+      - tapOn: "Password"
+      - inputText: ${CONSUMER_PASSWORD}
+      - hideKeyboard
+      - tapOn: "Continue"
+      - extendedWaitUntil:
+          visible: "Verification code|Welcome back.*"
+          timeout: 30000
+      - runFlow:
+          when:
+            visible: "Verification code"
+          file: otp.yaml
+- extendedWaitUntil:
+    visible: "Welcome back.*"
+    timeout: 60000

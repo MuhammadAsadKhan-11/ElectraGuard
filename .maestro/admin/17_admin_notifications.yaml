@@ -1,0 +1,19 @@
+appId: com.electraguard.app
+name: "ADM-17 Admin notifications screen opens"
+tags: [admin, notifications]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Profile"
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "Notifications"
+    direction: DOWN
+- tapOn: "Notifications"
+- extendedWaitUntil:
+    visible: "All caught up|Mark all read|No notifications yet|No unread notifications|All"
+    timeout: 20000
+- takeScreenshot: reports/ADM-17_notifications
+- back

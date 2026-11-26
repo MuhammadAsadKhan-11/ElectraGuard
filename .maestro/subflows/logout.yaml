@@ -1,0 +1,16 @@
+# Consumer ya Admin dono ke liye logout (Profile tab -> Logout -> confirm).
+appId: com.electraguard.app
+---
+- tapOn: "Profile"
+- scrollUntilVisible:
+    element:
+      text: "Logout"
+    direction: DOWN
+- tapOn: "Logout"
+- tapOn:
+    text: "Logout"
+    below:
+      text: "Are you sure you want to logout?"
+- extendedWaitUntil:
+    visible: "Sign in"
+    timeout: 20000

@@ -1,0 +1,28 @@
+appId: com.electraguard.app
+name: "ADM-13 Close case dialog can be cancelled"
+tags: [admin, cases]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Cases"
+- extendedWaitUntil:
+    visible: "Case Management"
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible: "Loading cases…"
+    timeout: 30000
+# Pehle case card par tap (har card par "📍 area" likha hota hai)
+- tapOn:
+    text: "📍.*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Case Details"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: ".*Close Case"
+    direction: DOWN
+- tapOn: ".*Close Case"
+- assertVisible: "Are you sure you want to close this case?"
+- takeScreenshot: reports/ADM-13_close_dialog
+- tapOn: "Cancel"
+- assertVisible: "Case Details"

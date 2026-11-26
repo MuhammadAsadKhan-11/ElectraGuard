@@ -1,0 +1,22 @@
+appId: com.electraguard.app
+name: "AUTH-15 Register a new consumer (creates a real account)"
+tags: [auth, register, writes-data]
+---
+# Ye test Firebase mein asli account banata hai. Sirf -IncludeWrites ke saath chalta hai.
+- evalScript: ${output.uid = String(Date.now()).slice(-7)}
+- runFlow: ../subflows/open_register.yaml
+- runFlow:
+    file: ../subflows/fill_register.yaml
+    env:
+      R_NAME: "Maestro Test"
+      R_ID: ${'MT' + output.uid}
+      R_CNIC: ${'352020' + output.uid}
+      R_EMAIL: ${'maestro' + output.uid + '@example.com'}
+      R_MOBILE: "03001234567"
+      R_PASS: "Test@1234"
+      R_CONFIRM: "Test@1234"
+      R_AGREE: "yes"
+- extendedWaitUntil:
+    visible: "Verification code|.*[Ss]uccess.*|.*[Vv]erif.*|Sign in"
+    timeout: 30000
+- takeScreenshot: reports/AUTH-15_register_result

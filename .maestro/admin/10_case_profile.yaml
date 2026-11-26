@@ -1,0 +1,30 @@
+appId: com.electraguard.app
+name: "ADM-10 Open a case and see details"
+tags: [admin, cases]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Cases"
+- extendedWaitUntil:
+    visible: "Case Management"
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible: "Loading cases…"
+    timeout: 30000
+# Pehle case card par tap (har card par "📍 area" likha hota hai)
+- tapOn:
+    text: "📍.*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Case Details"
+    timeout: 20000
+- assertVisible: "Area"
+- assertVisible: "Priority"
+- scrollUntilVisible:
+    element:
+      text: "Case Timeline"
+    direction: DOWN
+- takeScreenshot: reports/ADM-10_case_details
+- scrollUntilVisible:
+    element:
+      text: ".*Escalate"
+    direction: DOWN

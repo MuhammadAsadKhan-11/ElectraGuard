@@ -1,0 +1,8 @@
+# App ko saaf state ke saath kholta hai (logout + data clear) aur Login screen ka intezar karta hai.
+appId: com.electraguard.app
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Sign in"
+    timeout: 30000

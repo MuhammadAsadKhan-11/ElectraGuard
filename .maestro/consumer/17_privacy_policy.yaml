@@ -1,0 +1,24 @@
+appId: com.electraguard.app
+name: "CON-17 Privacy Policy opens"
+tags: [consumer, profile]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Profile"
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "Privacy Policy"
+    direction: DOWN
+- tapOn: "Privacy Policy"
+- extendedWaitUntil:
+    visible: "1. Data Collection"
+    timeout: 20000
+- assertVisible: "2. Data Usage"
+- takeScreenshot: reports/CON-17_privacy
+- scrollUntilVisible:
+    element:
+      text: "Close"
+    direction: DOWN
+- tapOn: "Close"

@@ -1,0 +1,8 @@
+appId: com.electraguard.app
+name: "CON-20 Consumer logout returns to Login"
+tags: [consumer, profile, smoke]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- runFlow: ../subflows/logout.yaml
+- assertVisible: "Choose a portal to continue"
+- takeScreenshot: reports/CON-20_logged_out

@@ -1,0 +1,14 @@
+appId: com.electraguard.app
+name: "CON-06 Learn tab shows energy awareness content"
+tags: [consumer, learn]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Learn"
+- extendedWaitUntil:
+    visible: "Energy awareness"
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible: "Loading content..."
+    timeout: 20000
+- assertNotVisible: "Retry"
+- takeScreenshot: reports/CON-06_learn

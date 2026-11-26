@@ -1,0 +1,25 @@
+appId: com.electraguard.app
+name: "ADM-11 Case Send update section is visible"
+tags: [admin, cases]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Cases"
+- extendedWaitUntil:
+    visible: "Case Management"
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible: "Loading cases…"
+    timeout: 30000
+# Pehle case card par tap (har card par "📍 area" likha hota hai)
+- tapOn:
+    text: "📍.*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Case Details"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "Send update to consumer"
+    direction: DOWN
+- assertVisible: "Remark or instruction for the consumer"
+- takeScreenshot: reports/ADM-11_send_update

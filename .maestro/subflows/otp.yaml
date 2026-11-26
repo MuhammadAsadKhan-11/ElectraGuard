@@ -1,0 +1,20 @@
+# OTP screen handle karta hai.
+# - Agar OTP env variable diya hai to khud type karega.
+# - Warna aap 3 minute ke andar phone par email wala code khud type kar dein.
+appId: com.electraguard.app
+---
+- runFlow:
+    when:
+      true: ${typeof OTP !== 'undefined' && OTP.length === 6}
+    commands:
+      - inputText: ${OTP}
+      # Keyboard band karne ke liye title par tap (hideKeyboard yahan Back dabata hai)
+      - tapOn: "Verify your email"
+      - scrollUntilVisible:
+          element:
+            text: "Verify and continue"
+          direction: DOWN
+      - tapOn: "Verify and continue"
+- extendedWaitUntil:
+    notVisible: "Verification code"
+    timeout: 180000

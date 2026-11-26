@@ -1,0 +1,18 @@
+appId: com.electraguard.app
+name: "CON-01 Home dashboard shows consumer info"
+tags: [consumer, smoke]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- assertVisible: "Welcome back.*"
+- assertVisible: "ID .*"
+- assertVisible: "Upload CSV File"
+- assertVisible: "Submit Units"
+- scrollUntilVisible:
+    element:
+      text: "Recent Consumptions"
+    direction: DOWN
+- takeScreenshot: reports/CON-01_home
+- assertVisible: "Home"
+- assertVisible: "Report"
+- assertVisible: "Learn"
+- assertVisible: "Profile"

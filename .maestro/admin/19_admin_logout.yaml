@@ -1,0 +1,8 @@
+appId: com.electraguard.app
+name: "ADM-19 Admin logout returns to Login"
+tags: [admin, smoke]
+---
+- runFlow: ../subflows/login_admin.yaml
+- runFlow: ../subflows/logout.yaml
+- assertVisible: "Choose a portal to continue"
+- takeScreenshot: reports/ADM-19_logged_out

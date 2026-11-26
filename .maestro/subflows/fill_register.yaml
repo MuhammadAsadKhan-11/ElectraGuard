@@ -1,0 +1,63 @@
+# Register form bharta hai. Values env se aati hain (har test apni values deta hai).
+# Env: R_NAME, R_ID, R_CNIC, R_EMAIL, R_MOBILE, R_PASS, R_CONFIRM, R_AGREE ("yes"/"no")
+#
+# Keyboard band karne ke liye har field ke baad "Enter" (keyboard ka Done) dabate hain.
+# hideKeyboard is screen par Back dabata hai aur app Login par chali jati hai, is liye use nahi karte.
+# Keyboard khula ho to scroll bhi kaam nahi karta, is liye scroll hamesha keyboard band karke.
+appId: com.electraguard.app
+---
+- tapOn: "Full name"
+- inputText: ${R_NAME}
+- pressKey: Enter
+- tapOn: "Consumer ID"
+- inputText: ${R_ID}
+- pressKey: Enter
+- tapOn: "13-digit CNIC"
+- inputText: ${R_CNIC}
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn: "Email address"
+- inputText: ${R_EMAIL}
+- pressKey: Enter
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      text: "Mobile number"
+    direction: DOWN
+- tapOn: "Mobile number"
+- inputText: ${R_MOBILE}
+- pressKey: Enter
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      text: "Confirm password"
+    direction: DOWN
+- tapOn: "Password"
+- inputText: ${R_PASS}
+- pressKey: Enter
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      text: "Confirm password"
+    direction: DOWN
+- tapOn: "Confirm password"
+- inputText: ${R_CONFIRM}
+- pressKey: Enter
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      text: "I agree to the.*"
+    direction: DOWN
+- runFlow:
+    when:
+      true: ${R_AGREE === 'yes'}
+    commands:
+      - tapOn: "I agree to the.*"
+- scrollUntilVisible:
+    element:
+      text: "Already have an account.*"
+    direction: DOWN
+- tapOn:
+    text: "Create account"
+    below:
+      text: "Your account is protected.*"

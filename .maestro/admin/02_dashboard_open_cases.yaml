@@ -1,0 +1,14 @@
+appId: com.electraguard.app
+name: "ADM-02 Dashboard Open cases button opens Case Management"
+tags: [admin, navigation]
+---
+- runFlow: ../subflows/login_admin.yaml
+- scrollUntilVisible:
+    element:
+      text: "Open cases"
+    direction: DOWN
+- tapOn: "Open cases"
+- extendedWaitUntil:
+    visible: "Case Management"
+    timeout: 20000
+- takeScreenshot: reports/ADM-02_cases_from_dashboard

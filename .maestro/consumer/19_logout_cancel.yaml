@@ -1,0 +1,19 @@
+appId: com.electraguard.app
+name: "CON-19 Logout cancel keeps user logged in"
+tags: [consumer, profile]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Profile"
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "Logout"
+    direction: DOWN
+- tapOn: "Logout"
+- assertVisible: "Are you sure you want to logout?"
+- takeScreenshot: reports/CON-19_logout_dialog
+- tapOn: "Cancel"
+- assertNotVisible: "Are you sure you want to logout?"
+- assertVisible: "Logout"

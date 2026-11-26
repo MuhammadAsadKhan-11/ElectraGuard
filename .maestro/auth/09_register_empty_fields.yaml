@@ -1,0 +1,16 @@
+appId: com.electraguard.app
+name: "AUTH-09 Register with empty fields shows error"
+tags: [auth, register, negative]
+---
+- runFlow: ../subflows/open_register.yaml
+- scrollUntilVisible:
+    element:
+      text: "Already have an account.*"
+    direction: DOWN
+- tapOn:
+    text: "Create account"
+    below:
+      text: "Your account is protected.*"
+- assertVisible: "Please fill in all fields."
+- takeScreenshot: reports/AUTH-09_register_empty
+- runFlow: ../subflows/dismiss_alert.yaml

@@ -1,0 +1,24 @@
+appId: com.electraguard.app
+name: "ADM-18 Admin System Settings opens"
+tags: [admin, profile, settings]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Profile"
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "System Settings"
+    direction: DOWN
+- tapOn: "System Settings"
+- extendedWaitUntil:
+    visible: "App Language"
+    timeout: 20000
+- assertVisible: "App Theme"
+- takeScreenshot: reports/ADM-18_settings
+- scrollUntilVisible:
+    element:
+      text: "Close"
+    direction: DOWN
+- tapOn: "Close"

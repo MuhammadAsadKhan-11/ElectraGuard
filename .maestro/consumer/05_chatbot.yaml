@@ -1,0 +1,22 @@
+appId: com.electraguard.app
+name: "CON-05 AI chatbot answers a question"
+tags: [consumer, support, ai]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Open help and support"
+- extendedWaitUntil:
+    visible: "Ask AI Assistant"
+    timeout: 20000
+- tapOn: "Ask AI Assistant"
+- extendedWaitUntil:
+    visible: "Support Assistant"
+    timeout: 20000
+- assertVisible: "Powered by AI"
+- tapOn: "Type your message..."
+- inputText: "How can I report electricity theft?"
+- pressKey: Enter
+- assertVisible: "How can I report electricity theft?"
+# AI jawab ka intezar (network par depend karta hai)
+- waitForAnimationToEnd:
+    timeout: 20000
+- takeScreenshot: reports/CON-05_chatbot_reply

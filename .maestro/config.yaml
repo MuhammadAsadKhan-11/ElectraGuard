@@ -1,0 +1,11 @@
+# ElectraGuard - Maestro workspace config
+# Poora suite:  maestro test .maestro/   (ya behtar: .\.maestro\run_tests.ps1)
+flows:
+  - "auth/*"
+  - "consumer/*"
+  - "admin/*"
+# Jo tests asli data banate hain (register, report, case) wo default mein skip hote hain.
+excludeTags:
+  - writes-data
+executionOrder:
+  continueOnFailure: true

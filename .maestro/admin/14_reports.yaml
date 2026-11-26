@@ -1,0 +1,21 @@
+appId: com.electraguard.app
+name: "ADM-14 Reports screen shows charts"
+tags: [admin, reports]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Reports"
+- extendedWaitUntil:
+    visible: "Theft statistics and performance"
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible: "Loading reports..."
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: "Risk Distribution"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      text: "Key Insights"
+    direction: DOWN
+- takeScreenshot: reports/ADM-14_reports

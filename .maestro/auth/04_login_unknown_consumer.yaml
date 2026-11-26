@@ -1,0 +1,17 @@
+appId: com.electraguard.app
+name: "AUTH-04 Login with unregistered consumer ID fails"
+tags: [auth, negative]
+---
+- runFlow: ../subflows/launch_fresh.yaml
+- tapOn: "Consumer"
+- tapOn: "Consumer ID or email"
+- inputText: "ZZ999999999"
+- tapOn: "Password"
+- inputText: "Test@1234"
+- hideKeyboard
+- tapOn: "Continue"
+- extendedWaitUntil:
+    visible: "Login Failed|Error"
+    timeout: 20000
+- takeScreenshot: reports/AUTH-04_unknown_consumer
+- runFlow: ../subflows/dismiss_alert.yaml

@@ -1,0 +1,13 @@
+# Fresh app -> Register screen
+appId: com.electraguard.app
+---
+- runFlow: launch_fresh.yaml
+- tapOn: "Consumer"
+- scrollUntilVisible:
+    element:
+      text: ".*Create one.*"
+    direction: DOWN
+- tapOn: ".*Create one.*"
+- extendedWaitUntil:
+    visible: "Register as a residential consumer"
+    timeout: 10000

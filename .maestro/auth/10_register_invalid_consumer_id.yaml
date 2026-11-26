@@ -1,0 +1,13 @@
+appId: com.electraguard.app
+name: "AUTH-10 Consumer ID field removes special characters"
+tags: [auth, register, negative]
+---
+# App Consumer ID mein sirf letters aur digits likhne deti hai (max 12).
+# Is liye "AB-12@#" likhne par field mein sirf "AB12" bachna chahiye.
+- runFlow: ../subflows/open_register.yaml
+- tapOn: "Consumer ID"
+- inputText: "AB-12@#"
+- assertVisible: "AB12"
+- assertNotVisible: "AB-12.*"
+- tapOn: "Register as a residential consumer"
+- takeScreenshot: reports/AUTH-10_consumer_id_sanitized

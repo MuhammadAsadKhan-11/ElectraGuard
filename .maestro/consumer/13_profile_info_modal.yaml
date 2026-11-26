@@ -1,0 +1,22 @@
+appId: com.electraguard.app
+name: "CON-13 Profile Information modal shows user details"
+tags: [consumer, profile]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Profile"
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 20000
+- tapOn: "Profile Information"
+- extendedWaitUntil:
+    visible: "Full Name"
+    timeout: 20000
+- assertVisible: "Consumer ID"
+- assertVisible: "CNIC Number"
+- takeScreenshot: reports/CON-13_profile_info
+- scrollUntilVisible:
+    element:
+      text: "Close"
+    direction: DOWN
+- tapOn: "Close"
+- assertVisible: "Account"

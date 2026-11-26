@@ -1,0 +1,8 @@
+appId: com.electraguard.app
+name: "AUTH-06 Consumer login with OTP reaches dashboard"
+tags: [auth, smoke, otp]
+---
+- runFlow: ../subflows/launch_fresh.yaml
+- runFlow: ../subflows/login_consumer.yaml
+- assertVisible: "Welcome back.*"
+- takeScreenshot: reports/AUTH-06_consumer_dashboard

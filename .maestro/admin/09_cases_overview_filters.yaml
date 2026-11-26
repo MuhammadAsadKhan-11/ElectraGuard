@@ -1,0 +1,17 @@
+appId: com.electraguard.app
+name: "ADM-09 Case overview and status filters"
+tags: [admin, cases]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Cases"
+- extendedWaitUntil:
+    visible: "Case Management"
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible: "Loading cases…"
+    timeout: 30000
+- assertVisible: "Case Status Overview"
+- tapOn: "In Progress \\(\\d+\\)"
+- waitForAnimationToEnd
+- takeScreenshot: reports/ADM-09_in_progress_filter
+- tapOn: "In Progress \\(\\d+\\)"

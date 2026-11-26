@@ -1,0 +1,14 @@
+appId: com.electraguard.app
+name: "AUTH-16 Register screen Sign in link goes back to Login"
+tags: [auth, register, navigation]
+---
+- runFlow: ../subflows/open_register.yaml
+- assertVisible: "Create account"
+- scrollUntilVisible:
+    element:
+      text: "Already have an account.*"
+    direction: DOWN
+- tapOn: "Already have an account.*"
+- extendedWaitUntil:
+    visible: "Choose a portal to continue"
+    timeout: 10000

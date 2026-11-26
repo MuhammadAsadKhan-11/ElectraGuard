@@ -1,0 +1,8 @@
+appId: com.electraguard.app
+name: "AUTH-07 Admin login with OTP reaches dashboard"
+tags: [auth, smoke, otp]
+---
+- runFlow: ../subflows/launch_fresh.yaml
+- runFlow: ../subflows/login_admin.yaml
+- assertVisible: "System administrator"
+- takeScreenshot: reports/AUTH-07_admin_dashboard

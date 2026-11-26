@@ -1,0 +1,19 @@
+appId: com.electraguard.app
+name: "AUTH-14 Register without accepting Terms"
+tags: [auth, register, negative]
+---
+- runFlow: ../subflows/open_register.yaml
+- runFlow:
+    file: ../subflows/fill_register.yaml
+    env:
+      R_NAME: "Test User"
+      R_ID: "AB12345"
+      R_CNIC: "3520212345671"
+      R_EMAIL: "qa.user@example.com"
+      R_MOBILE: "03001234567"
+      R_PASS: "Test@1234"
+      R_CONFIRM: "Test@1234"
+      R_AGREE: "no"
+- assertVisible: "Please agree to the Terms & Conditions."
+- takeScreenshot: reports/AUTH-14_register_terms_not_agreed
+- runFlow: ../subflows/dismiss_alert.yaml

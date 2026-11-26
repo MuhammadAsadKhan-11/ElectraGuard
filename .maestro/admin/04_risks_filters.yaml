@@ -1,0 +1,18 @@
+appId: com.electraguard.app
+name: "ADM-04 Risk filters work"
+tags: [admin, risks]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Risks"
+- extendedWaitUntil:
+    visible: "High-risk consumers"
+    timeout: 20000
+- assertVisible: "Accounts that need a closer look"
+- tapOn: "High Only"
+- waitForAnimationToEnd
+- takeScreenshot: reports/ADM-04_high_only
+- tapOn: "Medium Only"
+- waitForAnimationToEnd
+- tapOn: "Low Only"
+- waitForAnimationToEnd
+- tapOn: "All Risks"

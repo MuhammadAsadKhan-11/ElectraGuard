@@ -1,0 +1,18 @@
+appId: com.electraguard.app
+name: "ADM-15 Reports period filter changes data"
+tags: [admin, reports]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Reports"
+- extendedWaitUntil:
+    visible: "Theft statistics and performance"
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible: "Loading reports..."
+    timeout: 30000
+- tapOn: "Last 7 days"
+- waitForAnimationToEnd
+- takeScreenshot: reports/ADM-15_last_7_days
+- tapOn: "Last 3 months"
+- waitForAnimationToEnd
+- tapOn: "Last 30 days"

@@ -1,0 +1,22 @@
+appId: com.electraguard.app
+name: "CON-14 System Settings modal shows language and theme"
+tags: [consumer, profile, settings]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Profile"
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 20000
+- tapOn: "System Settings"
+- extendedWaitUntil:
+    visible: "App Language"
+    timeout: 20000
+- assertVisible: "App Theme"
+- assertVisible: "Light"
+- assertVisible: "Dark"
+- takeScreenshot: reports/CON-14_settings
+- scrollUntilVisible:
+    element:
+      text: "Close"
+    direction: DOWN
+- tapOn: "Close"

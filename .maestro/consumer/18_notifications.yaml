@@ -1,0 +1,15 @@
+appId: com.electraguard.app
+name: "CON-18 Notifications screen opens from Profile"
+tags: [consumer, notifications]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Profile"
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 20000
+- tapOn: "Notifications"
+- waitForAnimationToEnd:
+    timeout: 10000
+- assertNotVisible: "Account"
+- takeScreenshot: reports/CON-18_notifications
+- back

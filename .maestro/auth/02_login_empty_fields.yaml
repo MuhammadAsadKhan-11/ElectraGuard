@@ -1,0 +1,9 @@
+appId: com.electraguard.app
+name: "AUTH-02 Login with empty fields shows error"
+tags: [auth, negative]
+---
+- runFlow: ../subflows/launch_fresh.yaml
+- tapOn: "Continue"
+- assertVisible: "Please fill in all fields."
+- takeScreenshot: reports/AUTH-02_empty_fields
+- runFlow: ../subflows/dismiss_alert.yaml

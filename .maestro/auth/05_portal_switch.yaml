@@ -1,0 +1,14 @@
+appId: com.electraguard.app
+name: "AUTH-05 Consumer/Admin portal switch changes the form"
+tags: [auth, ui]
+---
+- runFlow: ../subflows/launch_fresh.yaml
+- tapOn: "Consumer"
+- assertVisible: "Consumer ID or email"
+- assertVisible: ".*Create one.*"
+- tapOn: "Admin"
+- assertVisible: "Admin email"
+- assertNotVisible: ".*Create one.*"
+- takeScreenshot: reports/AUTH-05_admin_portal
+- tapOn: "Consumer"
+- assertVisible: "Consumer ID or email"

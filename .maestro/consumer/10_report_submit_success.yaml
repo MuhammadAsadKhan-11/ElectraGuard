@@ -1,0 +1,45 @@
+appId: com.electraguard.app
+name: "CON-10 Submit a theft report (creates a real case)"
+tags: [consumer, report, writes-data]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Report"
+- extendedWaitUntil:
+    visible: "Submit New Report"
+    timeout: 20000
+- tapOn: "Select Issue Type"
+- extendedWaitUntil:
+    visible: "Select Issue Type"
+    timeout: 20000
+# ISSUE_TYPE env (run_tests.ps1) mein wo naam likhein jo dropdown mein nazar aata hai
+- tapOn: ${ISSUE_TYPE}
+- tapOn: "Please describe the issue in detail..."
+- inputText: "Maestro automation test - please ignore"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      text: "e.g. Outside main gate, Blue Area..."
+    direction: DOWN
+- tapOn: "e.g. Outside main gate, Blue Area..."
+- inputText: "Test location"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      text: "Medium"
+    direction: DOWN
+- tapOn: "Medium"
+- scrollUntilVisible:
+    element:
+      text: "Submit Report"
+    direction: DOWN
+- tapOn: "Submit Report"
+- extendedWaitUntil:
+    visible: "Report Submitted"
+    timeout: 30000
+- assertVisible: "Your reference ID is.*"
+- takeScreenshot: reports/CON-10_report_submitted
+- runFlow: ../subflows/dismiss_alert.yaml
+- scrollUntilVisible:
+    element:
+      text: "My Submitted Cases"
+    direction: DOWN

@@ -1,0 +1,14 @@
+appId: com.electraguard.app
+name: "AUTH-01 Splash screen opens Login"
+tags: [auth, smoke]
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Sign in"
+    timeout: 30000
+- assertVisible: "Choose a portal to continue"
+- assertVisible: "Consumer"
+- assertVisible: "Admin"
+- assertVisible: "Forgot password?"
+- takeScreenshot: reports/AUTH-01_login_screen

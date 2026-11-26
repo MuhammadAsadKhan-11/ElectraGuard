@@ -1,0 +1,17 @@
+appId: com.electraguard.app
+name: "ADM-01 Admin dashboard shows KPIs"
+tags: [admin, smoke]
+---
+- runFlow: ../subflows/login_admin.yaml
+- assertVisible: "Dashboard"
+- assertVisible: "System administrator"
+- assertVisible: "Theft Cases"
+- scrollUntilVisible:
+    element:
+      text: "High-Risk Consumers"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      text: "View risk list"
+    direction: DOWN
+- takeScreenshot: reports/ADM-01_dashboard

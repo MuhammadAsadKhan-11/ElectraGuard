@@ -1,0 +1,17 @@
+appId: com.electraguard.app
+name: "CON-07 Report without issue type shows error"
+tags: [consumer, report, negative]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Report"
+- extendedWaitUntil:
+    visible: "Submit New Report"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "Submit Report"
+    direction: DOWN
+- tapOn: "Submit Report"
+- assertVisible: "Please select an issue type."
+- takeScreenshot: reports/CON-07_no_issue_type
+- runFlow: ../subflows/dismiss_alert.yaml

@@ -1,0 +1,39 @@
+appId: com.electraguard.app
+name: "ADM-12 Escalate without details shows error"
+tags: [admin, cases, negative]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Cases"
+- extendedWaitUntil:
+    visible: "Case Management"
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible: "Loading cases…"
+    timeout: 30000
+# Pehle case card par tap (har card par "📍 area" likha hota hai)
+- tapOn:
+    text: "📍.*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Case Details"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: ".*Escalate"
+    direction: DOWN
+- tapOn: ".*Escalate"
+- extendedWaitUntil:
+    visible: "Escalate Case"
+    timeout: 20000
+- assertVisible: "Case Summary"
+- scrollUntilVisible:
+    element:
+      text: "Confirm Escalation"
+    direction: DOWN
+- tapOn:
+    text: "Confirm Escalation"
+    below:
+      text: "Important Notice"
+- assertVisible: "Missing Fields"
+- takeScreenshot: reports/ADM-12_escalate_missing
+- runFlow: ../subflows/dismiss_alert.yaml

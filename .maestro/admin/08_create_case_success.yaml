@@ -1,0 +1,72 @@
+appId: com.electraguard.app
+name: "ADM-08 Create a case (creates real data)"
+tags: [admin, cases, writes-data]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Risks"
+- extendedWaitUntil:
+    visible: "High-risk consumers"
+    timeout: 20000
+- assertVisible: "Accounts that need a closer look"
+- extendedWaitUntil:
+    visible: "Risk Score"
+    timeout: 30000
+- tapOn:
+    text: "Risk Score"
+    index: 0
+- extendedWaitUntil:
+    visible: "Consumer Profile"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: ".*Create Case"
+    direction: DOWN
+- tapOn: ".*Create Case"
+- extendedWaitUntil:
+    visible: "Create New Case"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Enter area or location"
+    commands:
+      - tapOn: "Enter area or location"
+      - inputText: "Test Area"
+      - hideKeyboard
+- scrollUntilVisible:
+    element:
+      text: "Select risk level"
+    direction: DOWN
+- tapOn: "Select risk level"
+- tapOn: "High"
+- scrollUntilVisible:
+    element:
+      text: "Select case category"
+    direction: DOWN
+- tapOn: "Select case category"
+- tapOn: "Meter Tampering"
+- scrollUntilVisible:
+    element:
+      text: "Provide detailed description..."
+    direction: DOWN
+- tapOn: "Provide detailed description..."
+- inputText: "Maestro automation test case - please ignore"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      text: "Select priority level"
+    direction: DOWN
+- tapOn: "Select priority level"
+- tapOn: "Normal"
+- scrollUntilVisible:
+    element:
+      text: "Create Case"
+    direction: DOWN
+- tapOn:
+    text: "Create Case"
+    below:
+      text: "Evidence Upload"
+- extendedWaitUntil:
+    visible: ".*Case Created"
+    timeout: 30000
+- takeScreenshot: reports/ADM-08_case_created
+- runFlow: ../subflows/dismiss_alert.yaml

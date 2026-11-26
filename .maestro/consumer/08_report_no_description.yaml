@@ -1,0 +1,23 @@
+appId: com.electraguard.app
+name: "CON-08 Report without description shows error"
+tags: [consumer, report, negative]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Report"
+- extendedWaitUntil:
+    visible: "Submit New Report"
+    timeout: 20000
+- tapOn: "Select Issue Type"
+- extendedWaitUntil:
+    visible: "Select Issue Type"
+    timeout: 20000
+# ISSUE_TYPE env (run_tests.ps1) mein wo naam likhein jo dropdown mein nazar aata hai
+- tapOn: ${ISSUE_TYPE}
+- scrollUntilVisible:
+    element:
+      text: "Submit Report"
+    direction: DOWN
+- tapOn: "Submit Report"
+- assertVisible: "Please describe the issue."
+- takeScreenshot: reports/CON-08_no_description
+- runFlow: ../subflows/dismiss_alert.yaml

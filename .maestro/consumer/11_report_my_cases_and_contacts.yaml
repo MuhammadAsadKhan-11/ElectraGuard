@@ -1,0 +1,19 @@
+appId: com.electraguard.app
+name: "CON-11 Report screen shows my cases and DISCO contacts"
+tags: [consumer, report]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Report"
+- extendedWaitUntil:
+    visible: "Submit New Report"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "My Submitted Cases"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      text: "DISCO Contact Information"
+    direction: DOWN
+- assertVisible: "Helpline"
+- takeScreenshot: reports/CON-11_report_bottom

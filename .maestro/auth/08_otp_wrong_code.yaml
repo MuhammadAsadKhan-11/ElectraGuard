@@ -1,0 +1,31 @@
+appId: com.electraguard.app
+name: "AUTH-08 Wrong login OTP is rejected"
+tags: [auth, negative, otp]
+---
+- runFlow: ../subflows/launch_fresh.yaml
+- tapOn: "Consumer"
+- tapOn: "Consumer ID or email"
+- inputText: ${CONSUMER_EMAIL}
+- tapOn: "Password"
+- inputText: ${CONSUMER_PASSWORD}
+- hideKeyboard
+- tapOn: "Continue"
+- extendedWaitUntil:
+    visible: "Verification code"
+    timeout: 30000
+# OTP screen par hideKeyboard NA lagayein: Android par wo Back dabata hai aur app Login par wapas chali jati hai.
+- inputText: "000000"
+# Keyboard button ko dhak leta hai. Title par tap karne se keyboard band ho jata hai.
+- tapOn: "Verify your email"
+- scrollUntilVisible:
+    element:
+      text: "Verify and continue"
+    direction: DOWN
+- tapOn: "Verify and continue"
+# App galat code ka error popup mein nahi, screen par text ki tarah dikhati hai.
+- extendedWaitUntil:
+    visible: ".*[Ii]nvalid.*|.*[Ii]ncorrect.*|.*[Ww]rong.*|.*[Ee]xpired.*|Verification failed.*"
+    timeout: 20000
+- assertVisible: "Verification code"
+- assertNotVisible: "Welcome back.*"
+- takeScreenshot: reports/AUTH-08_wrong_otp

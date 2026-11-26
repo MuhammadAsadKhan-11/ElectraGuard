@@ -1,0 +1,38 @@
+appId: com.electraguard.app
+name: "ADM-07 Create case without description shows error"
+tags: [admin, cases, negative]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Risks"
+- extendedWaitUntil:
+    visible: "High-risk consumers"
+    timeout: 20000
+- assertVisible: "Accounts that need a closer look"
+- extendedWaitUntil:
+    visible: "Risk Score"
+    timeout: 30000
+- tapOn:
+    text: "Risk Score"
+    index: 0
+- extendedWaitUntil:
+    visible: "Consumer Profile"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: ".*Create Case"
+    direction: DOWN
+- tapOn: ".*Create Case"
+- extendedWaitUntil:
+    visible: "Create New Case"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      text: "Create Case"
+    direction: DOWN
+- tapOn:
+    text: "Create Case"
+    below:
+      text: "Evidence Upload"
+- assertVisible: "Missing Fields"
+- takeScreenshot: reports/ADM-07_missing_fields
+- runFlow: ../subflows/dismiss_alert.yaml

@@ -1,0 +1,23 @@
+appId: com.electraguard.app
+name: "ADM-16 Admin profile shows all sections"
+tags: [admin, profile]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Profile"
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 20000
+- assertVisible: "Profile Information"
+- scrollUntilVisible:
+    element:
+      text: "Change Password"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      text: "Privacy Policy"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      text: "Logout"
+    direction: DOWN
+- takeScreenshot: reports/ADM-16_admin_profile

@@ -1,0 +1,16 @@
+appId: com.electraguard.app
+name: "ADM-05 Risk search with no match shows empty list"
+tags: [admin, risks]
+---
+- runFlow: ../subflows/login_admin.yaml
+- tapOn: "Risks"
+- extendedWaitUntil:
+    visible: "High-risk consumers"
+    timeout: 20000
+- assertVisible: "Accounts that need a closer look"
+- tapOn: "Search by ID, name or area..."
+- inputText: "zzzz-no-such-consumer"
+- hideKeyboard
+- assertNotVisible: "Risk Score"
+- takeScreenshot: reports/ADM-05_search_no_match
+- eraseText: 30

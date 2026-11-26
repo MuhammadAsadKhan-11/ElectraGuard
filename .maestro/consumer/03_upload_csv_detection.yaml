@@ -1,0 +1,44 @@
+appId: com.electraguard.app
+name: "CON-03 Upload CSV and get theft detection result"
+tags: [consumer, csv, ml]
+---
+# Zaroorat: run_tests.ps1 test-data/electraguard_test.csv ko phone ke Download folder mein push karta hai.
+# Phone ka file picker brand ke hisaab se thora alag hota hai; agar fail ho to "Downloads" wala step check karein.
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Select File|Tap to change file"
+- extendedWaitUntil:
+    visible: ".*electraguard_test.*|Recent|Downloads|Download"
+    timeout: 15000
+- runFlow:
+    when:
+      notVisible: ".*electraguard_test.*"
+    commands:
+      - tapOn:
+          text: "Show roots"
+          optional: true
+      - tapOn:
+          text: "Downloads|Download"
+          optional: true
+- tapOn: ".*electraguard_test.*"
+- extendedWaitUntil:
+    visible: "Tap to change file"
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      text: "Submit Units"
+    direction: DOWN
+- tapOn: "Submit Units"
+- extendedWaitUntil:
+    visible: "Detection Result"
+    timeout: 120000
+- assertVisible: "Risk Score"
+- assertVisible: "Model verdict"
+- takeScreenshot: reports/CON-03_detection_result
+- scrollUntilVisible:
+    element:
+      text: "Go to Dashboard"
+    direction: DOWN
+- tapOn: "Go to Dashboard"
+- extendedWaitUntil:
+    visible: "Welcome back.*"
+    timeout: 20000

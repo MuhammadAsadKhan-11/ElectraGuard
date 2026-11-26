@@ -1,0 +1,28 @@
+appId: com.electraguard.app
+name: "CON-12 Profile screen shows all sections"
+tags: [consumer, profile, smoke]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Profile"
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 20000
+- assertVisible: "Profile Information"
+- assertVisible: "Preferences"
+- assertVisible: "Notifications"
+- assertVisible: "System Settings"
+- scrollUntilVisible:
+    element:
+      text: "Security"
+    direction: DOWN
+- assertVisible: "Change Password"
+- scrollUntilVisible:
+    element:
+      text: "Privacy Policy"
+    direction: DOWN
+- assertVisible: "App Version"
+- scrollUntilVisible:
+    element:
+      text: "Logout"
+    direction: DOWN
+- takeScreenshot: reports/CON-12_profile

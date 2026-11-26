@@ -1,0 +1,4 @@
+# Android alert ka "OK" button dabata hai
+appId: com.electraguard.app
+---
+- tapOn: "OK"

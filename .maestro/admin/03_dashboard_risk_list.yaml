@@ -1,0 +1,14 @@
+appId: com.electraguard.app
+name: "ADM-03 Dashboard View risk list opens Risks"
+tags: [admin, navigation]
+---
+- runFlow: ../subflows/login_admin.yaml
+- scrollUntilVisible:
+    element:
+      text: "View risk list"
+    direction: DOWN
+- tapOn: "View risk list"
+- extendedWaitUntil:
+    visible: "High-risk consumers"
+    timeout: 20000
+- takeScreenshot: reports/ADM-03_risks_from_dashboard

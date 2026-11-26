@@ -1,0 +1,18 @@
+appId: com.electraguard.app
+name: "CON-04 Help and support screen opens"
+tags: [consumer, support]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- tapOn: "Open help and support"
+- extendedWaitUntil:
+    visible: "Help and support"
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible: "Loading support..."
+    timeout: 20000
+- assertVisible: "Ask AI Assistant"
+- scrollUntilVisible:
+    element:
+      text: "Frequently Asked Questions"
+    direction: DOWN
+- takeScreenshot: reports/CON-04_support

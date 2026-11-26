@@ -1,0 +1,14 @@
+appId: com.electraguard.app
+name: "CON-02 Submit Units without a CSV shows error"
+tags: [consumer, csv, negative]
+---
+- runFlow: ../subflows/login_consumer.yaml
+- scrollUntilVisible:
+    element:
+      text: "Submit Units"
+    direction: DOWN
+- tapOn: "Submit Units"
+- assertVisible: "No File"
+- assertVisible: "Please select a CSV file first."
+- takeScreenshot: reports/CON-02_no_file
+- runFlow: ../subflows/dismiss_alert.yaml
